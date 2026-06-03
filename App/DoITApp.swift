@@ -84,7 +84,7 @@ struct RootTabView: View {
                 .tabItem { Label("Today", systemImage: "sun.max") }
                 .tag(Tab.today)
 
-            SmartListsView()
+            PlanView()
                 .tabItem { Label("Plan", systemImage: "calendar") }
                 .tag(Tab.plan)
 

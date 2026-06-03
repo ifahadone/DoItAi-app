@@ -14,21 +14,18 @@ struct SmartListsView: View {
     private var tasks: [TaskModel]
 
     var body: some View {
-        NavigationStack {
-            List {
-                ForEach(SmartList.allCases) { smart in
-                    NavigationLink {
-                        SmartListDetailView(smartList: smart)
-                    } label: {
-                        HStack {
-                            Label(smart.title, systemImage: smart.systemImage)
-                            Spacer()
-                            Text("\(count(smart))").foregroundStyle(.secondary).monospacedDigit()
-                        }
+        List {
+            ForEach(SmartList.allCases) { smart in
+                NavigationLink {
+                    SmartListDetailView(smartList: smart)
+                } label: {
+                    HStack {
+                        Label(smart.title, systemImage: smart.systemImage)
+                        Spacer()
+                        Text("\(count(smart))").foregroundStyle(.secondary).monospacedDigit()
                     }
                 }
             }
-            .navigationTitle("Plan")
         }
     }
 

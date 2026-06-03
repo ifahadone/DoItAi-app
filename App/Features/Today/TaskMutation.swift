@@ -51,6 +51,18 @@ struct TaskMutation {
         await patch(task, fields: ["dueAt": dueAt.map { AnyCodable.string(Self.iso($0)) } ?? .null]) { $0.dueAt = dueAt }
     }
 
+    /// Place/move/resize a task's time block on the planner + dial (P2).
+    func setSchedule(_ task: TaskModel, start: Date?, end: Date?) async {
+        guard start != task.scheduledStart || end != task.scheduledEnd else { return }
+        await patch(task, fields: [
+            "scheduledStart": start.map { AnyCodable.string(Self.iso($0)) } ?? .null,
+            "scheduledEnd": end.map { AnyCodable.string(Self.iso($0)) } ?? .null,
+        ]) { t in
+            t.scheduledStart = start
+            t.scheduledEnd = end
+        }
+    }
+
     func assign(_ task: TaskModel, toListId listId: String?) async {
         guard listId != task.listId else { return }
         await patch(task, fields: ["listId": listId.map(AnyCodable.string) ?? .null]) { $0.listId = listId }
