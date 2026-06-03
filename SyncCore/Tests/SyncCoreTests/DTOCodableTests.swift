@@ -93,7 +93,9 @@ final class DTOCodableTests: XCTestCase {
     func testDateEncodesAsRFC3339UTC() throws {
         let task = TaskDTO(id: "x", ownerId: "o", title: "t", createdAt: created, updatedAt: updated)
         let object = try JSONSerialization.jsonObject(with: try encoder.encode(task)) as? [String: Any]
-        XCTAssertEqual(object?["createdAt"] as? String, "2023-11-14T22:13:20Z")
+        // RFC 3339 UTC *with fractional seconds* — sub-second precision keeps rapid same-field edits
+        // strictly ordered for the server's field-level LWW (see JSONCoding.makeEncoder).
+        XCTAssertEqual(object?["createdAt"] as? String, "2023-11-14T22:13:20.000Z")
     }
 
     func testDecodesFractionalSecondsFromServer() throws {

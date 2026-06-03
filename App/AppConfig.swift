@@ -103,6 +103,17 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: with `-liveSync -liveQuickAddDemo`, the app parses a natural-language phrase and
+    /// composes it into a task via the real quick-add path on launch (DevelopmentPlan P1-H). Always
+    /// `false` in release.
+    static var isLiveQuickAddDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-liveQuickAddDemo")
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: `-startTab <today|plan|lists|insights>` (or the shorthand `-startLists`) opens the
     /// app on that tab instead of Today — lets any tab be screenshot without UI navigation. Returns the
     /// tab name, or `nil` for the default. Always `nil` in release.

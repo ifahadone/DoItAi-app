@@ -14,15 +14,18 @@ import Foundation
 /// data race under Swift 6 strict concurrency). A formatter is built once per encoder/decoder, not
 /// per value, so the cost is negligible.
 public enum JSONCoding {
-    /// An encoder that serializes `Date` as RFC 3339 UTC (no fractional seconds, the canonical form).
+    /// An encoder that serializes `Date` as RFC 3339 UTC **with fractional seconds**. Sub-second
+    /// precision matters: `clientUpdatedAt` drives the server's field-level LWW, so two edits to the
+    /// same field within one second must get strictly-ordered timestamps or the later edit ties and is
+    /// dropped. The server emits + parses fractional RFC 3339, and the decoder above tolerates both.
     public static func makeEncoder() -> JSONEncoder {
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
-            try container.encode(plain.string(from: date))
+            try container.encode(formatter.string(from: date))
         }
         return encoder
     }

@@ -57,6 +57,38 @@ final class AppServices {
         }
     }
 
+    /// Materialize a parsed quick-add (P1-H) into a task: resolve/create its tags by name, create the
+    /// task, then apply the parsed priority/due/tags via the standard mutation paths. Returns the id.
+    @discardableResult
+    func composeQuickAdd(_ parsed: ParsedQuickAdd, ownerId: String) async -> String {
+        let ctx = container.mainContext
+
+        // Resolve each tag name to an existing tag or create it.
+        var tagIds: [String] = []
+        let existing = (try? ctx.fetch(FetchDescriptor<TagModel>(predicate: #Predicate { $0.deletedAt == nil }))) ?? []
+        let tagMut = TagMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator, ownerId: ownerId)
+        for name in parsed.tagNames {
+            if let match = existing.first(where: { $0.name.lowercased() == name.lowercased() }) {
+                tagIds.append(match.id)
+            } else if let id = await tagMut.create(name: name) {
+                tagIds.append(id)
+            }
+        }
+
+        let creator = TaskCreation(context: ctx, engine: syncEngine, ownerId: ownerId, clock: clock, idGenerator: idGenerator)
+        let id = await creator.createTask(title: parsed.title.isEmpty ? "Untitled" : parsed.title)
+
+        var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        if let task = try? ctx.fetch(descriptor).first {
+            let mut = TaskMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator)
+            if parsed.priority != .none { await mut.setPriority(task, parsed.priority) }
+            if let due = parsed.dueAt { await mut.reschedule(task, dueAt: due) }
+            if !tagIds.isEmpty { await mut.setTags(task, tagIds: tagIds) }
+        }
+        return id
+    }
+
     #if DEBUG
     /// DEBUG (`-livePushDemo`): exercise the REAL create→enqueue→flush path once, proving the
     /// app→server direction against the live API without UI automation. Mirrors `TodayView.addTask`.
@@ -120,6 +152,15 @@ final class AppServices {
             }
         }
         print("LIST demo: done list=\(listId ?? "nil") tag=\(tagId ?? "nil")")
+    }
+
+    /// DEBUG (`-liveQuickAddDemo`): parse a natural-language phrase and compose it into a task via the
+    /// real `composeQuickAdd` path, proving P1-H end-to-end (parse → fields → server).
+    func liveQuickAddDemo(ownerId: String) async {
+        let parsed = QuickAddParser.parse("Call the dentist tomorrow 9am #health !p2")
+        print("QUICKADD demo: parsed title=\(parsed.title) due=\(parsed.dueAt != nil) tags=\(parsed.tagNames) prio=\(parsed.priority)")
+        await composeQuickAdd(parsed, ownerId: ownerId)
+        await syncOnce()
     }
     #endif
 }

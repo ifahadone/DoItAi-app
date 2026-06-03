@@ -120,6 +120,10 @@ struct RootTabView: View {
             if AppConfig.isLiveListDemo, case let .signedIn(userId) = auth.state, let userId {
                 await services.liveListDemo(ownerId: userId)
             }
+            // `-liveQuickAddDemo`: parse an NL phrase and compose it into a task (P1-H).
+            if AppConfig.isLiveQuickAddDemo, case let .signedIn(userId) = auth.state, let userId {
+                await services.liveQuickAddDemo(ownerId: userId)
+            }
             #endif
         }
         .onChange(of: selection) { _, newValue in
@@ -129,9 +133,9 @@ struct RootTabView: View {
             }
         }
         .sheet(isPresented: $showQuickAdd) {
-            // TODO(Phase 1): the real AI-parsed Quick Add sheet (AppSpec §5.10). For now reuse the
-            //   Today add flow as a placeholder.
-            QuickAddPlaceholder()
+            QuickAddView()
+                .environment(auth)
+                .environment(services)
         }
     }
 }
@@ -149,18 +153,3 @@ private struct PlaceholderView: View {
     }
 }
 
-/// Placeholder Quick Add sheet (Phase 0). Phase 1 replaces this with the NL capture + preview UX.
-private struct QuickAddPlaceholder: View {
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationStack {
-            ContentUnavailableView("Quick Add", systemImage: "sparkles", description: Text("AI capture lands in Phase 1."))
-                .navigationTitle("Quick Add")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
-                    }
-                }
-        }
-    }
-}
