@@ -55,6 +55,13 @@ final class AuthService: NSObject, TokenProviding {
 
     /// Decide the initial state from the Keychain (call on launch).
     func bootstrap() async {
+        #if DEBUG
+        // Demo mode (`-uiDemo`): skip the Apple gate so the shell is reachable without a backend.
+        if AppConfig.isUIDemo {
+            state = .signedIn(userId: "demo-user")
+            return
+        }
+        #endif
         do {
             if let _ = try keychain.string(for: KeychainStore.Account.refreshToken) {
                 let userId = try keychain.string(for: KeychainStore.Account.appleUserId)

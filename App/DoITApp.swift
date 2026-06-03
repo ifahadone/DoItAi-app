@@ -17,6 +17,9 @@ struct DoITApp: App {
 
     init() {
         let container = PersistenceContainer.makeShared()
+        #if DEBUG
+        if AppConfig.isUIDemo { DemoData.seed(into: container) }
+        #endif
         let auth = AuthService()
         self.container = container
         _auth = State(initialValue: auth)

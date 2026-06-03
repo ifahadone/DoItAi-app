@@ -27,4 +27,15 @@ enum AppConfig {
         // Default placeholder host (ApiSpec §3). Set your production domain at deploy.
         return URL(string: "https://doit.app/api/v1")!
     }
+
+    /// DEBUG-only demo switch. When the app is launched with the `-uiDemo` argument, it bypasses the
+    /// Sign in with Apple gate and seeds sample tasks (see ``DemoData``) so the Today shell is
+    /// demoable in the simulator without a backend. Always `false` in release builds.
+    static var isUIDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-uiDemo")
+        #else
+        return false
+        #endif
+    }
 }
