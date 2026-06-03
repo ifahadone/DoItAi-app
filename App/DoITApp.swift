@@ -1,0 +1,130 @@
+import SwiftUI
+import SwiftData
+import DesignSystem
+
+/// The app entry point (AppSpec §4, §7). Builds the shared App-Group SwiftData container, the DI
+/// container (``AppServices``), and the auth service, then shows either the sign-in gate or the root
+/// tab shell.
+///
+/// Requires the Xcode app target. This file (and everything under `App/`) does NOT build via
+/// `swift build` on the SPM packages — it needs the app target that links SwiftData, SwiftUI, and
+/// AuthenticationServices, plus the local `SyncCore` and `DesignSystem` packages. See README.
+@main
+struct DoITApp: App {
+    @State private var auth: AuthService
+    @State private var services: AppServices
+    private let container: ModelContainer
+
+    init() {
+        let container = PersistenceContainer.makeShared()
+        let auth = AuthService()
+        self.container = container
+        _auth = State(initialValue: auth)
+        _services = State(initialValue: AppServices(container: container, auth: auth))
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            RootView()
+                .environment(auth)
+                .environment(services)
+                .theme(.default)
+                .task {
+                    await auth.bootstrap()
+                }
+        }
+        .modelContainer(container)
+    }
+}
+
+/// Switches between the sign-in gate and the main shell based on auth state.
+private struct RootView: View {
+    @Environment(AuthService.self) private var auth
+
+    var body: some View {
+        switch auth.state {
+        case .unknown:
+            ProgressView("Loading…")
+        case .signedOut:
+            SignInView()
+        case .signedIn:
+            RootTabView()
+        }
+    }
+}
+
+/// The five-tab root (AppSpec §4): Today · Plan · (+) · Lists · Insights. Phase 0 ships Today as a
+/// real (thin) screen; the rest are labeled placeholders so the navigation shell exists end-to-end.
+struct RootTabView: View {
+    /// Tracks the selected tab so the center `+` can present Quick Add instead of "selecting" a tab.
+    @State private var selection: Tab = .today
+    @State private var showQuickAdd = false
+
+    enum Tab: Hashable { case today, plan, add, lists, insights }
+
+    var body: some View {
+        TabView(selection: $selection) {
+            TodayView()
+                .tabItem { Label("Today", systemImage: "sun.max") }
+                .tag(Tab.today)
+
+            PlaceholderView(title: "Plan", systemImage: "calendar.day.timeline.left")
+                .tabItem { Label("Plan", systemImage: "calendar") }
+                .tag(Tab.plan)
+
+            // Center Quick Add: AppSpec §4 describes a floating capture button. Phase 0 uses a tab
+            // slot as the entry point; a true FAB overlay is a Phase 1 polish item.
+            Color.clear
+                .tabItem { Label("Add", systemImage: "plus.circle.fill") }
+                .tag(Tab.add)
+
+            PlaceholderView(title: "Lists", systemImage: "list.bullet.rectangle")
+                .tabItem { Label("Lists", systemImage: "tray.full") }
+                .tag(Tab.lists)
+
+            PlaceholderView(title: "Insights", systemImage: "chart.bar.xaxis")
+                .tabItem { Label("Insights", systemImage: "chart.bar") }
+                .tag(Tab.insights)
+        }
+        .onChange(of: selection) { _, newValue in
+            if newValue == .add {
+                showQuickAdd = true
+                selection = .today // bounce back; the + is an action, not a destination
+            }
+        }
+        .sheet(isPresented: $showQuickAdd) {
+            // TODO(Phase 1): the real AI-parsed Quick Add sheet (AppSpec §5.10). For now reuse the
+            //   Today add flow as a placeholder.
+            QuickAddPlaceholder()
+        }
+    }
+}
+
+/// A simple labeled placeholder for the not-yet-built tabs.
+private struct PlaceholderView: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView(title, systemImage: systemImage, description: Text("Coming in a later phase."))
+                .navigationTitle(title)
+        }
+    }
+}
+
+/// Placeholder Quick Add sheet (Phase 0). Phase 1 replaces this with the NL capture + preview UX.
+private struct QuickAddPlaceholder: View {
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView("Quick Add", systemImage: "sparkles", description: Text("AI capture lands in Phase 1."))
+                .navigationTitle("Quick Add")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+        }
+    }
+}

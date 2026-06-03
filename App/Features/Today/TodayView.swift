@@ -1,0 +1,107 @@
+import SwiftUI
+import SwiftData
+import SyncCore
+import DesignSystem
+
+/// The Today tab — the app's home base (AppSpec §4). Phase 0 is a deliberately thin slice: it lists
+/// the user's tasks from SwiftData and offers a `+` button that creates one offline and enqueues it
+/// for sync. The sectograph hero, agenda (now→next), routine progress, and morning brief arrive in
+/// later phases (AppSpec §5.3, DevelopmentPlan Phase 1–2).
+///
+/// Requires the Xcode app target (SwiftUI + SwiftData). Will not build via `swift build` standalone.
+struct TodayView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.theme) private var theme
+    @Environment(AuthService.self) private var auth
+    @Environment(AppServices.self) private var services
+
+    /// Live query: non-deleted tasks, newest first. SwiftData keeps this in sync with the store.
+    @Query(
+        filter: #Predicate<TaskModel> { $0.deletedAt == nil },
+        sort: \TaskModel.createdAt,
+        order: .reverse
+    )
+    private var tasks: [TaskModel]
+
+    @State private var isCreating = false
+    @State private var newTitle = ""
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if tasks.isEmpty {
+                    emptyState
+                } else {
+                    taskList
+                }
+            }
+            .navigationTitle("Today")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        newTitle = ""
+                        isCreating = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Add task")
+                }
+            }
+            .alert("New Task", isPresented: $isCreating) {
+                TextField("Title", text: $newTitle)
+                Button("Add") { Task { await addTask() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Create a task. It's saved offline and synced when you're online.")
+            }
+        }
+    }
+
+    private var taskList: some View {
+        List {
+            ForEach(tasks) { task in
+                HStack(spacing: theme.spacing.md) {
+                    Image(systemName: task.status == .done ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(task.status == .done ? theme.colors.statusDone : theme.colors.accent)
+                    VStack(alignment: .leading, spacing: theme.spacing.xs) {
+                        Text(task.title)
+                            .strikethrough(task.status == .done)
+                        if task.syncState != .synced {
+                            Text("Pending sync")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("No tasks yet", systemImage: "checklist")
+        } description: {
+            Text("Tap + to capture your first task.")
+        }
+    }
+
+    private func addTask() async {
+        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+
+        // Owner id from the signed-in session; fall back to a local placeholder before sign-in so
+        // the skeleton is usable in the simulator without a backend.
+        let ownerId: String
+        if case let .signedIn(userId) = auth.state, let userId { ownerId = userId }
+        else { ownerId = "local-user" }
+
+        let creator = TaskCreation(
+            context: modelContext,
+            engine: services.syncEngine,
+            ownerId: ownerId,
+            clock: services.clock,
+            idGenerator: services.idGenerator
+        )
+        await creator.createTask(title: title)
+    }
+}

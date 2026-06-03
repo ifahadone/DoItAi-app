@@ -1,0 +1,58 @@
+# ---- Swift Package Manager ----
+.build/
+.swiftpm/
+Package.resolved
+# (Package.resolved is intentionally ignored: SyncCore/DesignSystem are dependency-free, so it adds
+#  no value and only churns. Re-add it if remote dependencies are introduced.)
+
+# ---- Xcode ----
+## User settings & state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+## Build products & derived data
+DerivedData/
+build/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Xcode per-user / workspace cruft
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcworkspace/contents.xcworkspacedata#
+
+# ---- Provisioning / signing (never commit) ----
+*.mobileprovision
+*.p12
+*.p8
+*.cer
+*.certSigningRequest
+
+# ---- App secrets / local config ----
+Secrets.xcconfig
+*.local.xcconfig
+.env
+.env.*
+
+# ---- macOS ----
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ---- Editors ----
+.idea/
+*.swp
+*~
+.vscode/
+
+# ---- Misc ----
+*.log
+timeline.xctimeline
+playground.xcworkspace
