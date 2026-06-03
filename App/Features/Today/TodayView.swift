@@ -65,29 +65,15 @@ struct TodayView: View {
     private var taskList: some View {
         List {
             ForEach(tasks) { task in
-                HStack(spacing: theme.spacing.md) {
-                    Image(systemName: task.status == .done ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(task.status == .done ? theme.colors.statusDone : theme.colors.accent)
-                    VStack(alignment: .leading, spacing: theme.spacing.xs) {
-                        Text(task.title)
-                            .strikethrough(task.status == .done)
-                        HStack(spacing: theme.spacing.sm) {
-                            if let list = list(for: task) {
-                                Label(list.name, systemImage: list.icon)
-                                    .font(.caption2)
-                                    .padding(.horizontal, theme.spacing.sm)
-                                    .padding(.vertical, 2)
-                                    .background(theme.colors.accent.opacity(0.15), in: Capsule())
-                                    .foregroundStyle(theme.colors.accent)
-                            }
-                            if task.syncState != .synced {
-                                Text("Pending sync")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
+                TaskRow(
+                    title: task.title,
+                    isDone: task.status == .done,
+                    priorityLevel: task.priority.rawValue,
+                    list: list(for: task).map {
+                        TaskRow.ListBadge(name: $0.name, systemImage: $0.icon, colorHex: $0.colorHex)
+                    },
+                    isPendingSync: task.syncState != .synced
+                )
             }
         }
     }
