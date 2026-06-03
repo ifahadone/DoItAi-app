@@ -18,60 +18,110 @@ struct SwiftDataSyncStore: SyncStore {
     }
 
     func apply(_ change: SyncPullChange) async throws {
-        // Only `task` is modeled in Phase 0; other entity types are skipped (forward-compat,
-        // ApiSpec §13). Later phases add list/tag/routine/… cases here.
+        // `task`, `list`, and `tag` persist locally. `reminder`/`checklist` are skipped until their
+        // @Models land — an unmodeled entityType still decodes upstream and is simply no-op'd here,
+        // never crashing (forward-compat, ApiSpec §13).
         switch change.entityType {
-        case .task:
-            try await applyTask(change)
+        case .task: try await applyTask(change)
+        case .list: try await applyList(change)
+        case .tag:  try await applyTag(change)
         default:
-            // TODO(Phase 1): handle list, tag, routine, reminder, alarm, event upserts/tombstones.
+            // TODO(Phase 1): reminder + checklist need @Model types + DTOs before they can persist.
             return
         }
     }
 
+    // MARK: - Per-entity apply (upsert / tombstone)
+
     @MainActor
     private func applyTask(_ change: SyncPullChange) async throws {
         let context = container.mainContext
-        let entityId = change.entityId
-        let existing = try fetchTask(id: entityId, in: context)
-
+        let existing = try fetchTask(id: change.entityId, in: context)
         switch change.op {
         case .delete:
-            // Tombstone: mark deleted locally (or hard-delete — Phase 0 marks + keeps the row).
-            if let existing {
-                existing.deletedAt = existing.deletedAt ?? Date(timeIntervalSince1970: 0)
-                existing.serverVersion = change.version
-                existing.syncState = .synced
-            }
-            // TODO(Phase 1): decide retention — purge tombstoned rows after a window (mirrors the
-            //   server's gc.tombstones, ApiSpec §11).
-
+            markDeleted(existing, version: change.version)
         case .upsert:
             guard let payload = change.payload else { return }
-            // Decode the type-erased payload into TaskDTO by re-encoding then decoding.
-            let dto = try Self.decodeTaskPayload(payload)
-            if let existing {
-                existing.apply(dto)
-            } else {
-                context.insert(TaskModel.make(from: dto))
-            }
+            let dto = try Self.decode(payload, as: TaskDTO.self)
+            if let existing { existing.apply(dto) } else { context.insert(TaskModel.make(from: dto)) }
         }
+        if context.hasChanges { try context.save() }
+    }
 
-        if context.hasChanges {
-            try context.save()
+    @MainActor
+    private func applyList(_ change: SyncPullChange) async throws {
+        let context = container.mainContext
+        let existing = try fetchList(id: change.entityId, in: context)
+        switch change.op {
+        case .delete:
+            markDeleted(existing, version: change.version)
+        case .upsert:
+            guard let payload = change.payload else { return }
+            let dto = try Self.decode(payload, as: TaskListDTO.self)
+            if let existing { existing.apply(dto) } else { context.insert(TaskListModel.make(from: dto)) }
         }
+        if context.hasChanges { try context.save() }
+    }
+
+    @MainActor
+    private func applyTag(_ change: SyncPullChange) async throws {
+        let context = container.mainContext
+        let existing = try fetchTag(id: change.entityId, in: context)
+        switch change.op {
+        case .delete:
+            markDeleted(existing, version: change.version)
+        case .upsert:
+            guard let payload = change.payload else { return }
+            let dto = try Self.decode(payload, as: TagDTO.self)
+            if let existing { existing.apply(dto) } else { context.insert(TagModel.make(from: dto)) }
+        }
+        if context.hasChanges { try context.save() }
+    }
+
+    // MARK: - Helpers
+
+    /// Apply a tombstone: mark the local row deleted (Phase 0 keeps the row; a Phase 1 GC purges it).
+    /// No-op when the row was never seen locally — there's nothing to tombstone.
+    @MainActor
+    private func markDeleted<M: SyncTombstonable>(_ model: M?, version: Int) {
+        guard let model else { return }
+        model.deletedAt = model.deletedAt ?? Date(timeIntervalSince1970: 0)
+        model.serverVersion = version
+        model.syncStateRaw = LocalSyncState.synced.rawValue
     }
 
     @MainActor
     private func fetchTask(id: String, in context: ModelContext) throws -> TaskModel? {
-        var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == id })
-        descriptor.fetchLimit = 1
-        return try context.fetch(descriptor).first
+        var d = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == id }); d.fetchLimit = 1
+        return try context.fetch(d).first
     }
 
-    /// Re-materialize the erased pull payload into a concrete ``TaskDTO`` using the shared coders.
-    static func decodeTaskPayload(_ payload: AnyCodable) throws -> TaskDTO {
+    @MainActor
+    private func fetchList(id: String, in context: ModelContext) throws -> TaskListModel? {
+        var d = FetchDescriptor<TaskListModel>(predicate: #Predicate { $0.id == id }); d.fetchLimit = 1
+        return try context.fetch(d).first
+    }
+
+    @MainActor
+    private func fetchTag(id: String, in context: ModelContext) throws -> TagModel? {
+        var d = FetchDescriptor<TagModel>(predicate: #Predicate { $0.id == id }); d.fetchLimit = 1
+        return try context.fetch(d).first
+    }
+
+    /// Re-materialize an erased pull payload into a concrete DTO using the shared coders.
+    static func decode<T: Decodable>(_ payload: AnyCodable, as _: T.Type) throws -> T {
         let data = try JSONCoding.makeEncoder().encode(payload)
-        return try JSONCoding.makeDecoder().decode(TaskDTO.self, from: data)
+        return try JSONCoding.makeDecoder().decode(T.self, from: data)
     }
 }
+
+/// The minimal surface ``SwiftDataSyncStore/markDeleted`` needs to tombstone any synced row.
+protocol SyncTombstonable: AnyObject {
+    var deletedAt: Date? { get set }
+    var serverVersion: Int { get set }
+    var syncStateRaw: Int { get set }
+}
+
+extension TaskModel: SyncTombstonable {}
+extension TaskListModel: SyncTombstonable {}
+extension TagModel: SyncTombstonable {}

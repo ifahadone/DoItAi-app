@@ -144,6 +144,32 @@ extension TaskListModel {
             serverVersion: serverVersion, deletedAt: deletedAt
         )
     }
+
+    /// Build a fresh list model from a pulled DTO.
+    static func make(from dto: TaskListDTO) -> TaskListModel {
+        let model = TaskListModel(
+            id: dto.id, ownerId: dto.ownerId, name: dto.name, colorHex: dto.colorHex,
+            icon: dto.icon, sortIndex: dto.sortIndex, createdAt: dto.createdAt, updatedAt: dto.updatedAt,
+            serverVersion: dto.serverVersion, syncStateRaw: LocalSyncState.synced.rawValue
+        )
+        model.apply(dto)
+        return model
+    }
+
+    /// Overwrite local fields from an authoritative pulled DTO.
+    func apply(_ dto: TaskListDTO) {
+        ownerId = dto.ownerId
+        name = dto.name
+        colorHex = dto.colorHex
+        icon = dto.icon
+        sortIndex = dto.sortIndex
+        shareId = dto.shareId
+        createdAt = dto.createdAt
+        updatedAt = dto.updatedAt
+        serverVersion = dto.serverVersion
+        deletedAt = dto.deletedAt
+        syncState = .synced
+    }
 }
 
 // MARK: - TagModel
@@ -159,5 +185,28 @@ extension TagModel {
             id: id, ownerId: ownerId, name: name, colorHex: colorHex,
             createdAt: createdAt, updatedAt: updatedAt, serverVersion: serverVersion, deletedAt: deletedAt
         )
+    }
+
+    /// Build a fresh tag model from a pulled DTO.
+    static func make(from dto: TagDTO) -> TagModel {
+        let model = TagModel(
+            id: dto.id, ownerId: dto.ownerId, name: dto.name, colorHex: dto.colorHex,
+            createdAt: dto.createdAt, updatedAt: dto.updatedAt,
+            serverVersion: dto.serverVersion, syncStateRaw: LocalSyncState.synced.rawValue
+        )
+        model.apply(dto)
+        return model
+    }
+
+    /// Overwrite local fields from an authoritative pulled DTO.
+    func apply(_ dto: TagDTO) {
+        ownerId = dto.ownerId
+        name = dto.name
+        colorHex = dto.colorHex
+        createdAt = dto.createdAt
+        updatedAt = dto.updatedAt
+        serverVersion = dto.serverVersion
+        deletedAt = dto.deletedAt
+        syncState = .synced
     }
 }

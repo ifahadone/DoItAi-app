@@ -23,6 +23,11 @@ struct TodayView: View {
     )
     private var tasks: [TaskModel]
 
+    /// Non-deleted lists, so each task row can show its list as a chip once it syncs from the server
+    /// (proves `list` entities now round-trip into SwiftData — DevelopmentPlan P1-D/F).
+    @Query(filter: #Predicate<TaskListModel> { $0.deletedAt == nil })
+    private var lists: [TaskListModel]
+
     @State private var isCreating = false
     @State private var newTitle = ""
 
@@ -66,10 +71,20 @@ struct TodayView: View {
                     VStack(alignment: .leading, spacing: theme.spacing.xs) {
                         Text(task.title)
                             .strikethrough(task.status == .done)
-                        if task.syncState != .synced {
-                            Text("Pending sync")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                        HStack(spacing: theme.spacing.sm) {
+                            if let list = list(for: task) {
+                                Label(list.name, systemImage: list.icon)
+                                    .font(.caption2)
+                                    .padding(.horizontal, theme.spacing.sm)
+                                    .padding(.vertical, 2)
+                                    .background(theme.colors.accent.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(theme.colors.accent)
+                            }
+                            if task.syncState != .synced {
+                                Text("Pending sync")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -105,5 +120,11 @@ struct TodayView: View {
         await creator.createTask(title: title)
         // Flush the new task to the server when live-syncing (DevelopmentPlan P1-D).
         if AppConfig.isLiveSync { await services.syncOnce() }
+    }
+
+    /// Resolve a task's parent list (if assigned + already synced locally) for the row chip.
+    private func list(for task: TaskModel) -> TaskListModel? {
+        guard let listId = task.listId else { return nil }
+        return lists.first { $0.id == listId }
     }
 }
