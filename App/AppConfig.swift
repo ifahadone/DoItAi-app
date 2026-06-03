@@ -103,13 +103,17 @@ enum AppConfig {
         #endif
     }
 
-    /// DEBUG-only: with `-startLists`, the app opens on the Lists tab instead of Today (lets the Lists
-    /// screen be screenshot without UI navigation). Always `false` in release.
-    static var startsOnListsTab: Bool {
+    /// DEBUG-only: `-startTab <today|plan|lists|insights>` (or the shorthand `-startLists`) opens the
+    /// app on that tab instead of Today — lets any tab be screenshot without UI navigation. Returns the
+    /// tab name, or `nil` for the default. Always `nil` in release.
+    static var startTab: String? {
         #if DEBUG
-        return ProcessInfo.processInfo.arguments.contains("-startLists")
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-startTab"), i + 1 < args.count { return args[i + 1] }
+        if args.contains("-startLists") { return "lists" }
+        return nil
         #else
-        return false
+        return nil
         #endif
     }
 }

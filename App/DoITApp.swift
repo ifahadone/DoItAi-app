@@ -68,7 +68,14 @@ struct RootTabView: View {
     enum Tab: Hashable { case today, plan, add, lists, insights }
 
     init() {
-        _selection = State(initialValue: AppConfig.startsOnListsTab ? .lists : .today)
+        let tab: Tab
+        switch AppConfig.startTab {
+        case "plan": tab = .plan
+        case "lists": tab = .lists
+        case "insights": tab = .insights
+        default: tab = .today
+        }
+        _selection = State(initialValue: tab)
     }
 
     var body: some View {
@@ -77,7 +84,7 @@ struct RootTabView: View {
                 .tabItem { Label("Today", systemImage: "sun.max") }
                 .tag(Tab.today)
 
-            PlaceholderView(title: "Plan", systemImage: "calendar.day.timeline.left")
+            SmartListsView()
                 .tabItem { Label("Plan", systemImage: "calendar") }
                 .tag(Tab.plan)
 
