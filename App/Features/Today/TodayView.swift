@@ -43,7 +43,16 @@ struct TodayView: View {
                 if tasks.isEmpty {
                     emptyState
                 } else {
-                    taskList
+                    VStack(spacing: 0) {
+                        let dialItems = sectographItems
+                        if !dialItems.isEmpty {
+                            SectographView(items: dialItems)
+                                .frame(height: 240)
+                                .padding(.top, theme.spacing.sm)
+                                .padding(.horizontal, theme.spacing.xl)
+                        }
+                        taskList
+                    }
                 }
             }
             .navigationTitle("Today")
@@ -145,6 +154,28 @@ struct TodayView: View {
     /// Resolve a task's tag ids to names for the row pills.
     private func tagNames(for task: TaskModel) -> [String] {
         task.tagIds.compactMap { id in allTags.first { $0.id == id }?.name }
+    }
+
+    /// Map today's scheduled/due tasks to dial blocks (P2): scheduled ranges become arcs; a due-only
+    /// task becomes a short marker sliver at its due time. Tinted by the task's list color.
+    private var sectographItems: [SectographItem] {
+        let calendar = Calendar.current
+        let now = services.clock.now()
+        func minute(_ date: Date) -> Int? {
+            guard calendar.isDate(date, inSameDayAs: now) else { return nil }
+            let c = calendar.dateComponents([.hour, .minute], from: date)
+            return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        }
+        return tasks.compactMap { task in
+            let color = list(for: task)?.colorHex
+            if let start = task.scheduledStart, let startMinute = minute(start) {
+                let endMinute = task.scheduledEnd.flatMap(minute) ?? min(1440, startMinute + 60)
+                return SectographItem(id: task.id, startMinute: startMinute, endMinute: endMinute, colorHex: color)
+            } else if let due = task.dueAt, let dueMinute = minute(due) {
+                return SectographItem(id: task.id, startMinute: dueMinute, endMinute: min(1440, dueMinute + 20), colorHex: color)
+            }
+            return nil
+        }
     }
 
     // MARK: - Mutations (P1-E)
