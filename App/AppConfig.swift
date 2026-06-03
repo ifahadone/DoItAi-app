@@ -114,6 +114,16 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: with `-liveSync -liveReminderDemo`, the app inserts a task + 70 reminders and runs
+    /// the 64-cap scheduler on launch (DevelopmentPlan P1-I). Always `false` in release.
+    static var isLiveReminderDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-liveReminderDemo")
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: `-startTab <today|plan|lists|insights>` (or the shorthand `-startLists`) opens the
     /// app on that tab instead of Today — lets any tab be screenshot without UI navigation. Returns the
     /// tab name, or `nil` for the default. Always `nil` in release.

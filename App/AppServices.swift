@@ -89,6 +89,25 @@ final class AppServices {
         return id
     }
 
+    /// Build the notification plan from local reminder records (resolving task titles for the body)
+    /// and re-arm the rolling 64-cap window (P1-I). Best-effort; safe to call after each sync. Returns
+    /// `(planned, scheduled)` counts for diagnostics.
+    @discardableResult
+    func scheduleReminders() async -> (planned: Int, scheduled: Int) {
+        let ctx = container.mainContext
+        let reminders = (try? ctx.fetch(FetchDescriptor<ReminderModel>(predicate: #Predicate { $0.deletedAt == nil }))) ?? []
+        let tasks = (try? ctx.fetch(FetchDescriptor<TaskModel>())) ?? []
+        let titleById = Dictionary(tasks.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+        let planned: [PlannedNotification] = reminders.compactMap { reminder in
+            guard let fireAt = reminder.fireAt else { return nil }
+            return PlannedNotification(reminderId: reminder.id, taskId: reminder.taskId,
+                                       fireAt: fireAt, title: titleById[reminder.taskId] ?? "Reminder")
+        }
+        let plan = NotificationPlanner.plan(reminders: planned, now: clock.now())
+        let scheduled = await NotificationScheduler().rearm(plan)
+        return (plan.count, scheduled)
+    }
+
     #if DEBUG
     /// DEBUG (`-livePushDemo`): exercise the REAL create→enqueue→flush path once, proving the
     /// app→server direction against the live API without UI automation. Mirrors `TodayView.addTask`.
@@ -161,6 +180,28 @@ final class AppServices {
         print("QUICKADD demo: parsed title=\(parsed.title) due=\(parsed.dueAt != nil) tags=\(parsed.tagNames) prio=\(parsed.priority)")
         await composeQuickAdd(parsed, ownerId: ownerId)
         await syncOnce()
+    }
+
+    /// DEBUG (`-liveReminderDemo`): insert a task + 70 future reminders locally, then schedule them —
+    /// proves the reminder `@Model` + the 64-cap re-arm scheduler (pending count caps at 64).
+    func liveReminderDemo(ownerId: String) async {
+        let ctx = container.mainContext
+        let now = clock.now()
+        let taskId = idGenerator.newID()
+        ctx.insert(TaskModel(id: taskId, ownerId: ownerId, title: "Reminder stress test",
+                             statusRaw: TaskStatus.inbox.rawValue, createdAt: now, updatedAt: now,
+                             serverVersion: 0, syncStateRaw: LocalSyncState.synced.rawValue))
+        for i in 1...70 {
+            ctx.insert(ReminderModel(id: idGenerator.newID(), ownerId: ownerId, taskId: taskId, kind: 0,
+                                     fireAt: now.addingTimeInterval(Double(i) * 3600), interruption: 1,
+                                     createdAt: now, updatedAt: now, serverVersion: 0,
+                                     syncStateRaw: LocalSyncState.synced.rawValue))
+        }
+        do { try ctx.save() } catch { print("REMINDER demo: SAVE ERROR \(error)") }
+        let fetched = (try? ctx.fetch(FetchDescriptor<ReminderModel>(predicate: #Predicate { $0.deletedAt == nil })))?.count ?? -1
+        let result = await scheduleReminders()
+        let pending = await NotificationScheduler().pendingCount()
+        print("REMINDER demo: inserted 70, fetched=\(fetched), planned=\(result.planned), scheduled=\(result.scheduled), pending=\(pending) (cap \(NotificationPlanner.systemPendingCap))")
     }
     #endif
 }

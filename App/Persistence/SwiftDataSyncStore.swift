@@ -25,8 +25,11 @@ struct SwiftDataSyncStore: SyncStore {
         case .task: try await applyTask(change)
         case .list: try await applyList(change)
         case .tag:  try await applyTag(change)
+        case .reminder: try await applyReminder(change)
+        case .checklist: try await applyChecklist(change)
         default:
-            // TODO(Phase 1): reminder + checklist need @Model types + DTOs before they can persist.
+            // Forward-compat: an entity type this build doesn't model yet decodes upstream and is
+            // simply skipped here, never crashing (ApiSpec §13).
             return
         }
     }
@@ -78,6 +81,36 @@ struct SwiftDataSyncStore: SyncStore {
         if context.hasChanges { try context.save() }
     }
 
+    @MainActor
+    private func applyReminder(_ change: SyncPullChange) async throws {
+        let context = container.mainContext
+        let existing = try fetchReminder(id: change.entityId, in: context)
+        switch change.op {
+        case .delete:
+            markDeleted(existing, version: change.version)
+        case .upsert:
+            guard let payload = change.payload else { return }
+            let dto = try Self.decode(payload, as: ReminderDTO.self)
+            if let existing { existing.apply(dto) } else { context.insert(ReminderModel.make(from: dto)) }
+        }
+        if context.hasChanges { try context.save() }
+    }
+
+    @MainActor
+    private func applyChecklist(_ change: SyncPullChange) async throws {
+        let context = container.mainContext
+        let existing = try fetchChecklist(id: change.entityId, in: context)
+        switch change.op {
+        case .delete:
+            markDeleted(existing, version: change.version)
+        case .upsert:
+            guard let payload = change.payload else { return }
+            let dto = try Self.decode(payload, as: ChecklistItemDTO.self)
+            if let existing { existing.apply(dto) } else { context.insert(ChecklistItemModel.make(from: dto)) }
+        }
+        if context.hasChanges { try context.save() }
+    }
+
     // MARK: - Helpers
 
     /// Apply a tombstone: mark the local row deleted (Phase 0 keeps the row; a Phase 1 GC purges it).
@@ -108,6 +141,18 @@ struct SwiftDataSyncStore: SyncStore {
         return try context.fetch(d).first
     }
 
+    @MainActor
+    private func fetchReminder(id: String, in context: ModelContext) throws -> ReminderModel? {
+        var d = FetchDescriptor<ReminderModel>(predicate: #Predicate { $0.id == id }); d.fetchLimit = 1
+        return try context.fetch(d).first
+    }
+
+    @MainActor
+    private func fetchChecklist(id: String, in context: ModelContext) throws -> ChecklistItemModel? {
+        var d = FetchDescriptor<ChecklistItemModel>(predicate: #Predicate { $0.id == id }); d.fetchLimit = 1
+        return try context.fetch(d).first
+    }
+
     /// Re-materialize an erased pull payload into a concrete DTO using the shared coders.
     static func decode<T: Decodable>(_ payload: AnyCodable, as _: T.Type) throws -> T {
         let data = try JSONCoding.makeEncoder().encode(payload)
@@ -125,3 +170,5 @@ protocol SyncTombstonable: AnyObject {
 extension TaskModel: SyncTombstonable {}
 extension TaskListModel: SyncTombstonable {}
 extension TagModel: SyncTombstonable {}
+extension ReminderModel: SyncTombstonable {}
+extension ChecklistItemModel: SyncTombstonable {}

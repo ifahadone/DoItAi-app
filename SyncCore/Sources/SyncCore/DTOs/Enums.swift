@@ -52,6 +52,7 @@ public enum SyncEntityType: RawRepresentable, Codable, Sendable, Equatable {
     case tag
     case routine
     case reminder
+    case checklist
     case alarm
     case event
     case unknown(String)
@@ -63,6 +64,7 @@ public enum SyncEntityType: RawRepresentable, Codable, Sendable, Equatable {
         case "tag": self = .tag
         case "routine": self = .routine
         case "reminder": self = .reminder
+        case "checklist": self = .checklist
         case "alarm": self = .alarm
         case "event": self = .event
         default: self = .unknown(rawValue)
@@ -76,6 +78,7 @@ public enum SyncEntityType: RawRepresentable, Codable, Sendable, Equatable {
         case .tag: return "tag"
         case .routine: return "routine"
         case .reminder: return "reminder"
+        case .checklist: return "checklist"
         case .alarm: return "alarm"
         case .event: return "event"
         case .unknown(let value): return value

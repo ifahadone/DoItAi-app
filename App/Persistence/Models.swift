@@ -177,6 +177,99 @@ final class TagModel {
     }
 }
 
+// MARK: - Reminder
+
+@Model
+final class ReminderModel {
+    @Attribute(.unique) var id: String
+    var ownerId: String
+    var taskId: String
+    /// 0 absolute · 1 relativeToDue · 2 location · 3 recurring.
+    var kind: Int
+    var fireAt: Date?
+    var offsetMinutes: Int?
+    /// 0 passive · 1 active · 2 timeSensitive · 3 critical.
+    var interruption: Int
+    /// The scheduled `UNNotificationRequest` id (set by the local scheduler), if any.
+    var notificationId: String?
+
+    var createdAt: Date
+    var updatedAt: Date
+    var serverVersion: Int
+    var deletedAt: Date?
+    var syncStateRaw: Int
+
+    init(
+        id: String,
+        ownerId: String,
+        taskId: String,
+        kind: Int = 0,
+        fireAt: Date? = nil,
+        offsetMinutes: Int? = nil,
+        interruption: Int = 1,
+        notificationId: String? = nil,
+        createdAt: Date,
+        updatedAt: Date,
+        serverVersion: Int = 0,
+        syncStateRaw: Int = LocalSyncState.pendingCreate.rawValue
+    ) {
+        self.id = id
+        self.ownerId = ownerId
+        self.taskId = taskId
+        self.kind = kind
+        self.fireAt = fireAt
+        self.offsetMinutes = offsetMinutes
+        self.interruption = interruption
+        self.notificationId = notificationId
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.serverVersion = serverVersion
+        self.syncStateRaw = syncStateRaw
+    }
+}
+
+// MARK: - ChecklistItem
+
+@Model
+final class ChecklistItemModel {
+    @Attribute(.unique) var id: String
+    var ownerId: String
+    var taskId: String
+    var text: String
+    var done: Bool
+    var ord: Int
+
+    var createdAt: Date
+    var updatedAt: Date
+    var serverVersion: Int
+    var deletedAt: Date?
+    var syncStateRaw: Int
+
+    init(
+        id: String,
+        ownerId: String,
+        taskId: String,
+        text: String,
+        done: Bool = false,
+        ord: Int = 0,
+        createdAt: Date,
+        updatedAt: Date,
+        serverVersion: Int = 0,
+        syncStateRaw: Int = LocalSyncState.pendingCreate.rawValue
+    ) {
+        self.id = id
+        self.ownerId = ownerId
+        self.taskId = taskId
+        self.text = text
+        self.done = done
+        self.ord = ord
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.serverVersion = serverVersion
+        self.syncStateRaw = syncStateRaw
+    }
+}
+
 /// Per-entity local sync state (AppSpec §6 `SyncState`). Kept in the app target (not SyncCore) since
 /// it describes local persistence, not the wire contract.
 enum LocalSyncState: Int, Codable, Sendable {

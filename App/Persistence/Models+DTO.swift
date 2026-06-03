@@ -210,3 +210,85 @@ extension TagModel {
         syncState = .synced
     }
 }
+
+// MARK: - ReminderModel
+
+extension ReminderModel {
+    var syncState: LocalSyncState {
+        get { LocalSyncState(rawValue: syncStateRaw) ?? .synced }
+        set { syncStateRaw = newValue.rawValue }
+    }
+
+    func toDTO() -> ReminderDTO {
+        ReminderDTO(
+            id: id, ownerId: ownerId, taskId: taskId, kind: kind, fireAt: fireAt,
+            offsetMinutes: offsetMinutes, interruption: interruption, notificationId: notificationId,
+            createdAt: createdAt, updatedAt: updatedAt, serverVersion: serverVersion, deletedAt: deletedAt
+        )
+    }
+
+    static func make(from dto: ReminderDTO) -> ReminderModel {
+        let model = ReminderModel(
+            id: dto.id, ownerId: dto.ownerId, taskId: dto.taskId, kind: dto.kind, fireAt: dto.fireAt,
+            offsetMinutes: dto.offsetMinutes, interruption: dto.interruption, notificationId: dto.notificationId,
+            createdAt: dto.createdAt, updatedAt: dto.updatedAt, serverVersion: dto.serverVersion,
+            syncStateRaw: LocalSyncState.synced.rawValue
+        )
+        model.apply(dto)
+        return model
+    }
+
+    func apply(_ dto: ReminderDTO) {
+        ownerId = dto.ownerId
+        taskId = dto.taskId
+        kind = dto.kind
+        fireAt = dto.fireAt
+        offsetMinutes = dto.offsetMinutes
+        interruption = dto.interruption
+        notificationId = dto.notificationId
+        createdAt = dto.createdAt
+        updatedAt = dto.updatedAt
+        serverVersion = dto.serverVersion
+        deletedAt = dto.deletedAt
+        syncState = .synced
+    }
+}
+
+// MARK: - ChecklistItemModel
+
+extension ChecklistItemModel {
+    var syncState: LocalSyncState {
+        get { LocalSyncState(rawValue: syncStateRaw) ?? .synced }
+        set { syncStateRaw = newValue.rawValue }
+    }
+
+    func toDTO() -> ChecklistItemDTO {
+        ChecklistItemDTO(
+            id: id, ownerId: ownerId, taskId: taskId, text: text, done: done, ord: ord,
+            createdAt: createdAt, updatedAt: updatedAt, serverVersion: serverVersion, deletedAt: deletedAt
+        )
+    }
+
+    static func make(from dto: ChecklistItemDTO) -> ChecklistItemModel {
+        let model = ChecklistItemModel(
+            id: dto.id, ownerId: dto.ownerId, taskId: dto.taskId, text: dto.text, done: dto.done, ord: dto.ord,
+            createdAt: dto.createdAt, updatedAt: dto.updatedAt, serverVersion: dto.serverVersion,
+            syncStateRaw: LocalSyncState.synced.rawValue
+        )
+        model.apply(dto)
+        return model
+    }
+
+    func apply(_ dto: ChecklistItemDTO) {
+        ownerId = dto.ownerId
+        taskId = dto.taskId
+        text = dto.text
+        done = dto.done
+        ord = dto.ord
+        createdAt = dto.createdAt
+        updatedAt = dto.updatedAt
+        serverVersion = dto.serverVersion
+        deletedAt = dto.deletedAt
+        syncState = .synced
+    }
+}

@@ -124,6 +124,10 @@ struct RootTabView: View {
             if AppConfig.isLiveQuickAddDemo, case let .signedIn(userId) = auth.state, let userId {
                 await services.liveQuickAddDemo(ownerId: userId)
             }
+            // `-liveReminderDemo`: insert 70 reminders + run the 64-cap scheduler (P1-I).
+            if AppConfig.isLiveReminderDemo, case let .signedIn(userId) = auth.state, let userId {
+                await services.liveReminderDemo(ownerId: userId)
+            }
             #endif
         }
         .onChange(of: selection) { _, newValue in

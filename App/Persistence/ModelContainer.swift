@@ -14,7 +14,9 @@ enum PersistenceContainer {
     static let schema = Schema([
         TaskModel.self,
         TaskListModel.self,
-        TagModel.self
+        TagModel.self,
+        ReminderModel.self,
+        ChecklistItemModel.self
     ])
 
     /// The shared, App-Group-backed container used by the app and its extensions.
