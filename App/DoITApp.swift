@@ -60,6 +60,7 @@ private struct RootView: View {
 /// real (thin) screen; the rest are labeled placeholders so the navigation shell exists end-to-end.
 struct RootTabView: View {
     /// Tracks the selected tab so the center `+` can present Quick Add instead of "selecting" a tab.
+    @Environment(AppServices.self) private var services
     @State private var selection: Tab = .today
     @State private var showQuickAdd = false
 
@@ -88,6 +89,12 @@ struct RootTabView: View {
             PlaceholderView(title: "Insights", systemImage: "chart.bar.xaxis")
                 .tabItem { Label("Insights", systemImage: "chart.bar") }
                 .tag(Tab.insights)
+        }
+        .task {
+            // Live-sync (`-liveSync`): initial flush + pull when the shell appears, so the app shows
+            // what's already on the server. TODO(Phase 1): trigger on foreground + after each mutation
+            // for all signed-in sessions (not just the dev demo mode).
+            if AppConfig.isLiveSync { await services.syncOnce() }
         }
         .onChange(of: selection) { _, newValue in
             if newValue == .add {

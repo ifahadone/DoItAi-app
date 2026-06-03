@@ -20,6 +20,10 @@ enum AppConfig {
     /// via the `DOIT_API_BASE_URL` Info.plist key per scheme (e.g. a local mock server for dev —
     /// DevelopmentPlan Phase 0 task 0.2).
     static var apiBaseURL: URL {
+        #if DEBUG
+        // Live-sync dev mode (`-liveSync`) points at a local, stub-enabled API (DevelopmentPlan P1-D).
+        if isLiveSync { return URL(string: "http://localhost:3001/api/v1")! }
+        #endif
         if let raw = Bundle.main.object(forInfoDictionaryKey: "DOIT_API_BASE_URL") as? String,
            let url = URL(string: raw) {
             return url
@@ -34,6 +38,16 @@ enum AppConfig {
     static var isUIDemo: Bool {
         #if DEBUG
         return ProcessInfo.processInfo.arguments.contains("-uiDemo")
+        #else
+        return false
+        #endif
+    }
+
+    /// DEBUG-only: when launched with `-liveSync`, the app dev-signs-in against the local stub-enabled
+    /// API (`apiBaseURL` → localhost) and runs the real offline-sync loop. Always `false` in release.
+    static var isLiveSync: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-liveSync")
         #else
         return false
         #endif

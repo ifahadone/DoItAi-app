@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged into the generated Info.plist (GENERATE_INFOPLIST_FILE=YES + INFOPLIST_FILE).
+	     Kept OUTSIDE App/ so the file-system-synchronized group doesn't also copy it as a resource.
+	     Allows the DEBUG `-liveSync` build to reach the local http://localhost API — App Transport
+	     Security otherwise blocks plaintext HTTP. NSAllowsLocalNetworking permits loopback/local hosts
+	     only, so release (which talks to the API over HTTPS) is unaffected. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

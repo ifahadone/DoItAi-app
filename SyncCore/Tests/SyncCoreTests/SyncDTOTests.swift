@@ -48,7 +48,7 @@ final class SyncDTOTests: XCTestCase {
               "status": "applied",
               "serverVersion": 5,
               "serverFields": null,
-              "committedSeq": 91432
+              "committedSeq": "91432"
             }
           ]
         }
@@ -56,7 +56,7 @@ final class SyncDTOTests: XCTestCase {
         let response = try decoder.decode(SyncPushResponse.self, from: Data(json.utf8))
         XCTAssertEqual(response.results.first?.status, .applied)
         XCTAssertEqual(response.results.first?.serverVersion, 5)
-        XCTAssertEqual(response.results.first?.committedSeq, 91432)
+        XCTAssertEqual(response.results.first?.committedSeq, "91432")
         XCTAssertNil(response.results.first?.serverFields)
     }
 
@@ -64,7 +64,7 @@ final class SyncDTOTests: XCTestCase {
         // ApiSpec §21 "Sync conflict (merged) example".
         let json = """
         { "opId":"f1e2","entityId":"a3b4","status":"merged","serverVersion":9,
-          "serverFields":{ "title":"Lunch with Samir" }, "committedSeq":91710 }
+          "serverFields":{ "title":"Lunch with Samir" }, "committedSeq":"91710" }
         """
         let result = try decoder.decode(SyncPushResult.self, from: Data(json.utf8))
         XCTAssertEqual(result.status, .merged)
@@ -76,8 +76,8 @@ final class SyncDTOTests: XCTestCase {
         {
           "changes": [
             { "entityType": "task", "entityId": "a3b4", "op": "upsert", "version": 5,
-              "payload": { "id": "a3b4", "title": "x" }, "seq": 91432 },
-            { "entityType": "task", "entityId": "9c10", "op": "delete", "version": 3, "seq": 91440 }
+              "payload": { "id": "a3b4", "title": "x" }, "seq": "91432" },
+            { "entityType": "task", "entityId": "9c10", "op": "delete", "version": 3, "seq": "91440" }
           ],
           "nextCursor": "kFnAkQ==",
           "hasMore": false

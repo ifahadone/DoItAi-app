@@ -53,8 +53,12 @@ struct KeychainStore: Sendable {
             query[kSecValueData as String] = value
             query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             let addStatus = SecItemAdd(query as CFDictionary, nil)
-            guard addStatus == errSecSuccess else { throw KeychainError.unexpectedStatus(addStatus) }
+            guard addStatus == errSecSuccess else {
+                if Self.shouldFallBack(addStatus), fallbackSet(value, account) { return }
+                throw KeychainError.unexpectedStatus(addStatus)
+            }
         default:
+            if Self.shouldFallBack(updateStatus), fallbackSet(value, account) { return }
             throw KeychainError.unexpectedStatus(updateStatus)
         }
     }
@@ -73,6 +77,7 @@ struct KeychainStore: Sendable {
         case errSecItemNotFound:
             return nil
         default:
+            if Self.shouldFallBack(status) { return fallbackGet(account) }
             throw KeychainError.unexpectedStatus(status)
         }
     }
@@ -81,6 +86,7 @@ struct KeychainStore: Sendable {
     func remove(for account: String) throws {
         let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
+            if Self.shouldFallBack(status) { fallbackRemove(account); return }
             throw KeychainError.unexpectedStatus(status)
         }
     }
@@ -121,4 +127,55 @@ struct KeychainStore: Sendable {
         if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
         return query
     }
+
+    // MARK: In-memory fallback (DEBUG only)
+    //
+    // An UNSIGNED simulator build has no `application-identifier` entitlement, so the Keychain returns
+    // errSecMissingEntitlement (-34018). To keep the `-liveSync` dev demo usable, DEBUG builds fall
+    // back to a process-memory token store in that ONE case. Release builds never fall back — tokens
+    // always live in the real Keychain (AppSpec §13).
+
+    private static func shouldFallBack(_ status: OSStatus) -> Bool {
+        #if DEBUG
+        return status == errSecMissingEntitlement
+        #else
+        return false
+        #endif
+    }
+
+    private func fallbackSet(_ value: Data, _ account: String) -> Bool {
+        #if DEBUG
+        Self.memory.set(value, key: memKey(account)); return true
+        #else
+        return false
+        #endif
+    }
+
+    private func fallbackGet(_ account: String) -> Data? {
+        #if DEBUG
+        return Self.memory.get(memKey(account))
+        #else
+        return nil
+        #endif
+    }
+
+    private func fallbackRemove(_ account: String) {
+        #if DEBUG
+        Self.memory.remove(memKey(account))
+        #endif
+    }
+
+    #if DEBUG
+    private func memKey(_ account: String) -> String { "\(service)\u{0}\(account)" }
+    private static let memory = MemoryTokenStore()
+
+    /// Process-lifetime, lock-guarded token store used only when the Keychain is unavailable.
+    final class MemoryTokenStore: @unchecked Sendable {
+        private var store: [String: Data] = [:]
+        private let lock = NSLock()
+        func set(_ value: Data, key: String) { lock.lock(); store[key] = value; lock.unlock() }
+        func get(_ key: String) -> Data? { lock.lock(); defer { lock.unlock() }; return store[key] }
+        func remove(_ key: String) { lock.lock(); store[key] = nil; lock.unlock() }
+    }
+    #endif
 }

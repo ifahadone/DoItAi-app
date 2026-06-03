@@ -57,17 +57,20 @@ public struct SyncPushResult: Codable, Sendable, Equatable {
     public var opId: String
     public var entityId: String
     public var status: PushStatus
-    public var serverVersion: Int
+    /// Server version after the change. Null when the op was rejected (no write).
+    public var serverVersion: Int?
     public var serverFields: [String: AnyCodable]?
-    public var committedSeq: Int
+    /// `change_log` seq this change produced — a BIGINT the server sends as a STRING
+    /// (JSON-number-safe); null when the op was not applied.
+    public var committedSeq: String?
 
     public init(
         opId: String,
         entityId: String,
         status: PushStatus,
-        serverVersion: Int,
+        serverVersion: Int?,
         serverFields: [String: AnyCodable]? = nil,
-        committedSeq: Int
+        committedSeq: String?
     ) {
         self.opId = opId
         self.entityId = entityId
@@ -101,7 +104,8 @@ public struct SyncPullChange: Codable, Sendable, Equatable {
     public var op: SyncOp
     public var version: Int
     public var payload: AnyCodable?
-    public var seq: Int
+    /// Monotonic `change_log` cursor value — a BIGINT the server sends as a STRING (JSON-number-safe).
+    public var seq: String
 
     public init(
         entityType: SyncEntityType,
@@ -109,7 +113,7 @@ public struct SyncPullChange: Codable, Sendable, Equatable {
         op: SyncOp,
         version: Int,
         payload: AnyCodable? = nil,
-        seq: Int
+        seq: String
     ) {
         self.entityType = entityType
         self.entityId = entityId

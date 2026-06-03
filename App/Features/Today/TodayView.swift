@@ -103,5 +103,7 @@ struct TodayView: View {
             idGenerator: services.idGenerator
         )
         await creator.createTask(title: title)
+        // Flush the new task to the server when live-syncing (DevelopmentPlan P1-D).
+        if AppConfig.isLiveSync { await services.syncOnce() }
     }
 }

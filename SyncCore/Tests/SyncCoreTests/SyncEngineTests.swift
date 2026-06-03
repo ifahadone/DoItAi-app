@@ -72,7 +72,7 @@ final class SyncEngineTests: XCTestCase {
             // Acknowledge op 1 as applied; op 2 as rejected (must stay in the outbox).
             let results = request.ops.map { op -> SyncPushResult in
                 let status: PushStatus = op.opId == "1" ? .applied : .rejected
-                return SyncPushResult(opId: op.opId, entityId: op.entityId, status: status, serverVersion: 1, committedSeq: 10)
+                return SyncPushResult(opId: op.opId, entityId: op.entityId, status: status, serverVersion: 1, committedSeq: "10")
             }
             return SyncPushResponse(results: results)
         }
@@ -106,8 +106,8 @@ final class SyncEngineTests: XCTestCase {
             SyncPullResponse(
                 changes: [
                     SyncPullChange(entityType: .task, entityId: "a", op: .upsert,
-                                   version: 1, payload: .object(["id": .string("a")]), seq: 5),
-                    SyncPullChange(entityType: .task, entityId: "b", op: .delete, version: 2, seq: 6)
+                                   version: 1, payload: .object(["id": .string("a")]), seq: "5"),
+                    SyncPullChange(entityType: .task, entityId: "b", op: .delete, version: 2, seq: "6")
                 ],
                 nextCursor: "Ng==",
                 hasMore: false
@@ -166,7 +166,7 @@ final class SyncEngineTests: XCTestCase {
                 default: status = .rejected
                 }
                 return SyncPushResult(opId: op.opId, entityId: op.entityId, status: status,
-                                      serverVersion: 2, serverFields: serverFields, committedSeq: 99)
+                                      serverVersion: 2, serverFields: serverFields, committedSeq: "99")
             })
         }
 
@@ -197,14 +197,14 @@ final class SyncEngineTests: XCTestCase {
         await transport.setPushResponder { request in
             SyncPushResponse(results: request.ops.map {
                 SyncPushResult(opId: $0.opId, entityId: $0.entityId, status: .applied,
-                               serverVersion: 1, committedSeq: 7)
+                               serverVersion: 1, committedSeq: "7")
             })
         }
         await transport.setPullResponder { _ in
             SyncPullResponse(
                 changes: [SyncPullChange(entityType: .task, entityId: "task-1", op: .upsert, version: 1,
                                          payload: .object(["id": .string("task-1"), "title": .string("T-op1")]),
-                                         seq: 7)],
+                                         seq: "7")],
                 nextCursor: "Nw==", hasMore: false
             )
         }

@@ -61,6 +61,11 @@ final class AuthService: NSObject, TokenProviding {
             state = .signedIn(userId: "demo-user")
             return
         }
+        // Live-sync dev mode (`-liveSync`): dev sign-in against the local stub API, then sync for real.
+        if AppConfig.isLiveSync {
+            await devSignIn()
+            return
+        }
         #endif
         do {
             if let _ = try keychain.string(for: KeychainStore.Account.refreshToken) {
@@ -73,6 +78,47 @@ final class AuthService: NSObject, TokenProviding {
             state = .signedOut
         }
     }
+
+    #if DEBUG
+    /// DEBUG dev sign-in for `-liveSync`: mint an unsigned, decodable stub Apple identity token (the
+    /// server's `APPLE_STUB_VERIFICATION` decodes it WITHOUT verifying and trusts `sub`) and exchange
+    /// it at `POST /auth/apple` for real tokens — so the simulator can drive the live sync loop
+    /// without the Sign in with Apple capability. Never compiled into release.
+    func devSignIn() async {
+        lastError = nil
+        guard let apiClient else { state = .signedOut; return }
+        let sub = "ios-dev-user"
+        let request = AppleSignInRequest(
+            identityToken: Self.makeStubIdentityToken(sub: sub),
+            authorizationCode: "dev",
+            nonce: "dev",
+            deviceInfo: .init(appVersion: "dev", deviceId: idGenerator.newID())
+        )
+        do {
+            let tokens = try await apiClient.signInWithApple(request)
+            try persist(tokens, appleUserId: sub)
+            state = .signedIn(userId: tokens.userId ?? sub)
+        } catch {
+            lastError = "dev sign-in failed: \(error)"
+            state = .signedOut
+        }
+    }
+
+    /// Build an UNSIGNED, structurally-valid JWT carrying `sub` (for the server dev stub only).
+    static func makeStubIdentityToken(sub: String) -> String {
+        func b64url(_ data: Data) -> String {
+            data.base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+        let header = b64url(Data(#"{"alg":"HS256","typ":"JWT"}"#.utf8))
+        let now = Int(Date().timeIntervalSince1970)
+        let payload = b64url(Data(#"{"sub":"\#(sub)","email":"\#(sub)@doit.app","iat":\#(now),"exp":\#(now + 3600)}"#.utf8))
+        let sig = b64url(Data("devsig".utf8))
+        return "\(header).\(payload).\(sig)"
+    }
+    #endif
 
     // MARK: - Sign in with Apple
 
