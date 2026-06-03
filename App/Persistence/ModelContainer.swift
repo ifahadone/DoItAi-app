@@ -20,29 +20,39 @@ enum PersistenceContainer {
     /// The shared, App-Group-backed container used by the app and its extensions.
     @MainActor
     static func makeShared() -> ModelContainer {
-        let configuration = ModelConfiguration(
-            schema: schema,
-            // Persist into the App Group so widgets/Live Activity share the store.
-            groupContainer: .identifier(AppConfig.appGroupIdentifier),
-            cloudKitDatabase: .none // sync is via the DoIT API, not CloudKit (AppSpec §8)
-        )
+        // Prefer the App Group store (shared with widgets/Live Activity, AppSpec §9). SwiftData
+        // *fatalErrors* — it does not throw — when the group is absent from the app's entitlements,
+        // so a do/catch can't recover. Check the container is actually available first, and only then
+        // request the group-backed store; otherwise fall back to the app's default store so the app
+        // still launches (e.g. in the simulator before the App Groups capability is configured — see
+        // README).
+        let groupAvailable = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupIdentifier) != nil
 
-        do {
-            return try ModelContainer(for: schema, configurations: [configuration])
-        } catch {
-            // TODO(Phase 1): surface this via an onboarding/error path and add a migration plan
-            //   (SchemaMigrationPlan) before the store ships with real user data. For Phase 0 we
-            //   fall back to a default (non-App-Group) store so the app still launches in the
-            //   simulator before the capability is configured.
-            #if DEBUG
-            print("⚠️ App Group container unavailable (\(AppConfig.appGroupIdentifier)): \(error). " +
-                  "Falling back to default store. Enable the App Groups capability — see README.")
-            #endif
-            do {
-                return try ModelContainer(for: schema)
-            } catch {
-                fatalError("Unable to create SwiftData ModelContainer: \(error)")
+        if groupAvailable {
+            let configuration = ModelConfiguration(
+                schema: schema,
+                groupContainer: .identifier(AppConfig.appGroupIdentifier),
+                cloudKitDatabase: .none // sync is via the DoIT API, not CloudKit (AppSpec §8)
+            )
+            if let container = try? ModelContainer(for: schema, configurations: [configuration]) {
+                return container
             }
+        }
+
+        #if DEBUG
+        if !groupAvailable {
+            print("⚠️ App Group '\(AppConfig.appGroupIdentifier)' not entitled; using the default store. " +
+                  "Enable the App Groups capability to share data with widgets — see README.")
+        }
+        #endif
+
+        // TODO(Phase 1): surface failures via an onboarding/error path and add a SchemaMigrationPlan
+        //   before the store ships with real user data.
+        do {
+            return try ModelContainer(for: schema)
+        } catch {
+            fatalError("Unable to create SwiftData ModelContainer: \(error)")
         }
     }
 
