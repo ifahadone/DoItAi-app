@@ -1,0 +1,48 @@
+name: CI
+
+# Phase 0 iOS CI (DevelopmentPlan task 0.12 / P0-G):
+#  - SyncCore: the pure, framework-free core — `swift test` runs on the host.
+#  - App build: compile the DoIT app target (with the local SyncCore + DesignSystem
+#    packages) for the iOS Simulator SDK. Build-only (no signing, no device) so it
+#    runs on a stock macOS runner. The Xcode app target was hand-authored with a
+#    file-system-synchronized group (objectVersion 77 → needs Xcode 16+).
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  synccore:
+    name: SyncCore unit tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test (SyncCore)
+        working-directory: SyncCore
+        run: swift test
+      - name: swift build (DesignSystem)
+        working-directory: DesignSystem
+        run: swift build
+
+  app-build:
+    name: build DoIT (iOS Simulator)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Xcode
+        run: xcodebuild -version
+      - name: Build app for the simulator SDK (unsigned, generic destination)
+        run: |
+          xcodebuild \
+            -project DoIT.xcodeproj \
+            -scheme DoIT \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build

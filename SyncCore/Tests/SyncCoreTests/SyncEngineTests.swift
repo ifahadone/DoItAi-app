@@ -144,6 +144,84 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(snapshot.map(\.opId), ["1", "2"])
     }
 
+    /// flush() must drop every terminal status (applied/merged/duplicate/conflict) from the outbox —
+    /// crucially `.conflict`, which would otherwise re-conflict on every flush — while KEEPING
+    /// `.rejected`, and surface merged/conflict outcomes to the caller (never silently lost).
+    func testFlushReconcilesAllStatuses() async throws {
+        let engine = DefaultSyncEngine(clock: clock)
+        for id in ["applied", "merged", "conflict", "duplicate", "rejected"] {
+            await engine.enqueue(makeOp(id: id))
+        }
+
+        let transport = FakeTransport()
+        await transport.setPushResponder { request in
+            SyncPushResponse(results: request.ops.map { op in
+                let status: PushStatus
+                var serverFields: [String: AnyCodable]?
+                switch op.opId {
+                case "applied": status = .applied
+                case "merged": status = .merged; serverFields = ["title": .string("server-wins")]
+                case "conflict": status = .conflict
+                case "duplicate": status = .duplicate
+                default: status = .rejected
+                }
+                return SyncPushResult(opId: op.opId, entityId: op.entityId, status: status,
+                                      serverVersion: 2, serverFields: serverFields, committedSeq: 99)
+            })
+        }
+
+        let results = try await engine.flush(using: transport)
+        XCTAssertEqual(results.count, 5) // all surfaced to the caller
+
+        // Only the rejected op remains queued.
+        let pending = await engine.snapshotOutbox().map(\.opId)
+        XCTAssertEqual(pending, ["rejected"])
+
+        // Merged carries the server-kept fields; conflict is present (surfaced), not dropped silently.
+        XCTAssertEqual(results.first { $0.status == .merged }?.serverFields?["title"], .string("server-wins"))
+        XCTAssertTrue(results.contains { $0.status == .conflict })
+    }
+
+    /// The Phase 0 walking-skeleton loop end-to-end: enqueue a local create → flush (server accepts,
+    /// outbox drains) → pull (the authoritative row comes back and is applied to the local store,
+    /// cursor advances).
+    func testFullEnqueueFlushPullCycle() async throws {
+        let store = RecordingStore()
+        let engine = DefaultSyncEngine(clock: clock, store: store)
+
+        await engine.enqueue(makeOp(id: "op1", entity: "task-1"))
+        let pendingBefore = await engine.pendingCount
+        XCTAssertEqual(pendingBefore, 1)
+
+        let transport = FakeTransport()
+        await transport.setPushResponder { request in
+            SyncPushResponse(results: request.ops.map {
+                SyncPushResult(opId: $0.opId, entityId: $0.entityId, status: .applied,
+                               serverVersion: 1, committedSeq: 7)
+            })
+        }
+        await transport.setPullResponder { _ in
+            SyncPullResponse(
+                changes: [SyncPullChange(entityType: .task, entityId: "task-1", op: .upsert, version: 1,
+                                         payload: .object(["id": .string("task-1"), "title": .string("T-op1")]),
+                                         seq: 7)],
+                nextCursor: "Nw==", hasMore: false
+            )
+        }
+
+        let pushResults = try await engine.flush(using: transport)
+        XCTAssertEqual(pushResults.first?.status, .applied)
+        let pendingAfter = await engine.pendingCount
+        XCTAssertEqual(pendingAfter, 0) // outbox drained
+
+        let applied = try await engine.applyPull(using: transport)
+        XCTAssertEqual(applied, 1)
+        let recorded = await store.applied
+        XCTAssertEqual(recorded.map(\.entityId), ["task-1"])
+        let cursor = await engine.currentCursor
+        XCTAssertEqual(cursor, "Nw==")
+    }
+
     // MARK: Backoff policy (pure math)
 
     func testBackoffGrowsExponentiallyAndCaps() {

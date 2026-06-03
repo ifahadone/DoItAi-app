@@ -114,21 +114,28 @@ public actor DefaultSyncEngine: SyncEngine {
         //   (ApiSpec §6.3). Backoff is intentionally NOT applied here yet to keep Phase 0 a skeleton.
         let response = try await transport.push(request)
 
-        // TODO(Phase 1): reconcile each result with local state:
-        //   - .applied / .duplicate  → drop the op from the outbox, store the new serverVersion.
-        //   - .merged                → apply `serverFields` over local state (server won those
-        //                              fields), bump version, drop the op.
-        //   - .conflict              → write a structural-conflict entry to the activity log and
-        //                              resolve via `resolver`; never silently drop (ApiSpec §6.1).
-        //   - .rejected              → surface an auth/permission error; do not retry blindly.
-        //   Advance the pull cursor past `committedSeq` so we don't re-pull our own writes.
-        // For Phase 0 we optimistically clear ops the server acknowledged in any terminal status.
-        let acknowledged: Set<String> = Set(
-            response.results
-                .filter { [.applied, .merged, .duplicate].contains($0.status) }
-                .map(\.opId)
+        // Reconcile each result with the outbox (ApiSpec §6.1). The authoritative server state for
+        // every accepted op arrives on the next applyPull — pull is the single write-of-truth — so
+        // here we only decide what stays queued:
+        //   - applied / duplicate → done; drop the op.
+        //   - merged              → the server kept some fields (returned in `serverFields`); the
+        //                           reconciled row is pulled next. Drop the op; the outcome is
+        //                           surfaced to the caller via the returned results.
+        //   - conflict            → structural conflict; the server's decision stands and is pulled.
+        //                           Drop the op, but it is SURFACED (returned results / activity log)
+        //                           so it is never silently lost. (Previously left queued ⇒ it would
+        //                           re-conflict on every flush.)
+        //   - rejected            → auth / permission / validation failure the caller must address;
+        //                           keep it queued rather than dropping or blindly retrying.
+        // Only ops from THIS batch are touched; anything enqueued during the await stays put.
+        // TODO(Phase 1): apply `serverFields` locally on .merged for instant UI; advance the pull
+        //   cursor past max(committedSeq) to skip re-pulling our own writes; add retry/backoff +
+        //   poison-parking for rejected ops.
+        let batchIds = Set(batch.map(\.opId))
+        let keepQueued: Set<String> = Set(
+            response.results.filter { $0.status == .rejected }.map(\.opId)
         )
-        outbox.removeAll { acknowledged.contains($0.opId) }
+        outbox.removeAll { batchIds.contains($0.opId) && !keepQueued.contains($0.opId) }
 
         return response.results
     }
