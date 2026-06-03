@@ -61,6 +61,7 @@ private struct RootView: View {
 struct RootTabView: View {
     /// Tracks the selected tab so the center `+` can present Quick Add instead of "selecting" a tab.
     @Environment(AppServices.self) private var services
+    @Environment(AuthService.self) private var auth
     @State private var selection: Tab = .today
     @State private var showQuickAdd = false
 
@@ -95,6 +96,12 @@ struct RootTabView: View {
             // what's already on the server. TODO(Phase 1): trigger on foreground + after each mutation
             // for all signed-in sessions (not just the dev demo mode).
             if AppConfig.isLiveSync { await services.syncOnce() }
+            #if DEBUG
+            // `-livePushDemo`: prove app→server by creating + flushing one task via the real path.
+            if AppConfig.isLivePushDemo, case let .signedIn(userId) = auth.state, let userId {
+                await services.livePushDemo(ownerId: userId)
+            }
+            #endif
         }
         .onChange(of: selection) { _, newValue in
             if newValue == .add {

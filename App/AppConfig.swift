@@ -19,10 +19,17 @@ enum AppConfig {
     /// Base URL for the DoIT API (`/api/v1`). Defaults to the documented placeholder host; override
     /// via the `DOIT_API_BASE_URL` Info.plist key per scheme (e.g. a local mock server for dev —
     /// DevelopmentPlan Phase 0 task 0.2).
+    /// The live (Render-hosted) DoIT dev/staging API, co-located with Neon/Redis in Singapore.
+    /// This is the default target for `-liveSync` (DevelopmentPlan P1-D). HTTPS, so no ATS exception.
+    static let liveRenderBaseURL = URL(string: "https://doit-api-2clz.onrender.com/api/v1")!
+
     static var apiBaseURL: URL {
         #if DEBUG
-        // Live-sync dev mode (`-liveSync`) points at a local, stub-enabled API (DevelopmentPlan P1-D).
-        if isLiveSync { return URL(string: "http://localhost:3001/api/v1")! }
+        // Live-sync dev mode (`-liveSync`) targets the live Render dev API by default; pass
+        // `-localApi` alongside it to hit a local stub server on :3001 instead (faster iteration).
+        if isLiveSync {
+            return isLocalApi ? URL(string: "http://localhost:3001/api/v1")! : liveRenderBaseURL
+        }
         #endif
         if let raw = Bundle.main.object(forInfoDictionaryKey: "DOIT_API_BASE_URL") as? String,
            let url = URL(string: raw) {
@@ -48,6 +55,27 @@ enum AppConfig {
     static var isLiveSync: Bool {
         #if DEBUG
         return ProcessInfo.processInfo.arguments.contains("-liveSync")
+        #else
+        return false
+        #endif
+    }
+
+    /// DEBUG-only: with `-liveSync -localApi`, target a local stub server on `:3001` instead of the
+    /// live Render API. Lets the same live-sync flow iterate against localhost when desired.
+    static var isLocalApi: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-localApi")
+        #else
+        return false
+        #endif
+    }
+
+    /// DEBUG-only: with `-liveSync -livePushDemo`, the app creates one task on launch via the real
+    /// ``TaskCreation`` path and flushes it, proving the app→server direction end-to-end against the
+    /// live API without UI automation (DevelopmentPlan P1-D). Always `false` in release.
+    static var isLivePushDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-livePushDemo")
         #else
         return false
         #endif

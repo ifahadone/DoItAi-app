@@ -56,4 +56,20 @@ final class AppServices {
             #endif
         }
     }
+
+    #if DEBUG
+    /// DEBUG (`-livePushDemo`): exercise the REAL create→enqueue→flush path once, proving the
+    /// app→server direction against the live API without UI automation. Mirrors `TodayView.addTask`.
+    func livePushDemo(ownerId: String) async {
+        let creator = TaskCreation(
+            context: container.mainContext,
+            engine: syncEngine,
+            ownerId: ownerId,
+            clock: clock,
+            idGenerator: idGenerator
+        )
+        await creator.createTask(title: "From iOS app → Render ✅")
+        await syncOnce() // flush the new task to the live API, then pull
+    }
+    #endif
 }

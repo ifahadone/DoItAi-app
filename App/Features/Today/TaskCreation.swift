@@ -52,8 +52,10 @@ struct TaskCreation {
         context.insert(model)
         try? context.save()
 
-        // Enqueue the create as an outbox upsert with baseVersion 0 (brand new). Only the fields the
-        // server needs for a create are sent; later edits send sparse patches.
+        // Enqueue the create as an outbox upsert with baseVersion 0 (brand new). The patch carries
+        // ONLY writable task columns (ApiSpec §6.1 / TaskPatchSchema, which is strict): the server
+        // derives `id` from the op's entityId, `ownerId` from the auth token, and created/updated
+        // timestamps from its own clock — including those here is rejected as `invalid_patch`.
         let op = OutboxOp(
             opId: idGenerator.newID(),
             entityType: .task,
@@ -62,26 +64,15 @@ struct TaskCreation {
             baseVersion: 0,
             clientUpdatedAt: now,
             fields: [
-                "id": .string(id),
-                "ownerId": .string(ownerId),
                 "title": .string(title),
                 "status": .int(TaskStatus.inbox.rawValue),
                 "priority": .int(Priority.none.rawValue),
                 "rank": .int(0),
-                "isAllDay": .bool(false),
-                "createdAt": .string(Self.iso(now)),
-                "updatedAt": .string(Self.iso(now))
+                "isAllDay": .bool(false)
             ],
             enqueuedAt: now
         )
         await engine.enqueue(op)
         return id
-    }
-
-    /// ISO-8601 (RFC 3339, no fractional seconds) for embedding dates in the AnyCodable field bag.
-    private static func iso(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
     }
 }
