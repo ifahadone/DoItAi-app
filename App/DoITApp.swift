@@ -107,6 +107,7 @@ struct RootTabView: View {
             // what's already on the server. TODO(Phase 1): trigger on foreground + after each mutation
             // for all signed-in sessions (not just the dev demo mode).
             if AppConfig.isLiveSync { await services.syncOnce() }
+            await services.publishAgenda() // refresh the agenda widget snapshot (P1-J)
             #if DEBUG
             // `-livePushDemo`: prove app→server by creating + flushing one task via the real path.
             if AppConfig.isLivePushDemo, case let .signedIn(userId) = auth.state, let userId {

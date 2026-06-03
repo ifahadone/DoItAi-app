@@ -89,6 +89,27 @@ final class AppServices {
         return id
     }
 
+    /// Publish the agenda widget's data — today's + overdue tasks — to the shared App-Group store so
+    /// the WidgetKit extension renders without touching SwiftData (P1-J snapshot pattern). Best-effort;
+    /// call after sync. (Cross-process delivery needs the App Groups entitlement; in the unentitled
+    /// simulator this writes to the per-process standard defaults.)
+    func publishAgenda() async {
+        let ctx = container.mainContext
+        let tasks = (try? ctx.fetch(FetchDescriptor<TaskModel>(predicate: #Predicate { $0.deletedAt == nil }))) ?? []
+        let now = clock.now()
+        let items: [AgendaItem] = tasks.compactMap { task in
+            let bucket = SmartListClassifier.classify(status: task.status, dueAt: task.dueAt,
+                                                      scheduledStart: task.scheduledStart, now: now)
+            guard bucket == .today || bucket == .overdue else { return nil }
+            let dueText = task.dueAt.map { $0.formatted(date: .omitted, time: .shortened) }
+            return AgendaItem(taskId: task.id, title: task.title, dueText: dueText,
+                              isDone: task.status == .done, priorityLevel: task.priority.rawValue)
+        }
+        let snapshot = AgendaSnapshot(items: items, generatedAtEpoch: now.timeIntervalSince1970)
+        let defaults = UserDefaults(suiteName: AppConfig.appGroupIdentifier) ?? .standard
+        AgendaSnapshotStore.save(snapshot, to: defaults)
+    }
+
     /// Build the notification plan from local reminder records (resolving task titles for the body)
     /// and re-arm the rolling 64-cap window (P1-I). Best-effort; safe to call after each sync. Returns
     /// `(planned, scheduled)` counts for diagnostics.
