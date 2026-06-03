@@ -30,6 +30,8 @@ struct TodayView: View {
 
     @State private var isCreating = false
     @State private var newTitle = ""
+    /// The task whose detail sheet is open (P1-E).
+    @State private var selectedTask: TaskModel?
 
     var body: some View {
         NavigationStack {
@@ -59,6 +61,11 @@ struct TodayView: View {
             } message: {
                 Text("Create a task. It's saved offline and synced when you're online.")
             }
+            .sheet(item: $selectedTask) { task in
+                TaskDetailView(task: task)
+                    .environment(auth)
+                    .environment(services)
+            }
         }
     }
 
@@ -72,8 +79,24 @@ struct TodayView: View {
                     list: list(for: task).map {
                         TaskRow.ListBadge(name: $0.name, systemImage: $0.icon, colorHex: $0.colorHex)
                     },
-                    isPendingSync: task.syncState != .synced
+                    dueText: dueText(for: task),
+                    isPendingSync: task.syncState != .synced,
+                    onToggle: { Task { await toggleComplete(task) } }
                 )
+                .contentShape(Rectangle())
+                .onTapGesture { selectedTask = task }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) { Task { await delete(task) } } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
+                .swipeActions(edge: .leading) {
+                    Button { Task { await toggleComplete(task) } } label: {
+                        Label(task.status == .done ? "Reopen" : "Done",
+                              systemImage: task.status == .done ? "arrow.uturn.left" : "checkmark.circle")
+                    }
+                    .tint(task.status == .done ? .gray : .green)
+                }
             }
         }
     }
@@ -112,5 +135,27 @@ struct TodayView: View {
     private func list(for task: TaskModel) -> TaskListModel? {
         guard let listId = task.listId else { return nil }
         return lists.first { $0.id == listId }
+    }
+
+    // MARK: - Mutations (P1-E)
+
+    private var mutation: TaskMutation {
+        TaskMutation(context: modelContext, engine: services.syncEngine,
+                     clock: services.clock, idGenerator: services.idGenerator)
+    }
+
+    private func toggleComplete(_ task: TaskModel) async {
+        await mutation.toggleComplete(task)
+        if AppConfig.isLiveSync { await services.syncOnce() }
+    }
+
+    private func delete(_ task: TaskModel) async {
+        await mutation.delete(task)
+        if AppConfig.isLiveSync { await services.syncOnce() }
+    }
+
+    private func dueText(for task: TaskModel) -> String? {
+        guard let due = task.dueAt else { return nil }
+        return due.formatted(date: .abbreviated, time: .shortened)
     }
 }

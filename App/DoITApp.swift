@@ -101,6 +101,10 @@ struct RootTabView: View {
             if AppConfig.isLivePushDemo, case let .signedIn(userId) = auth.state, let userId {
                 await services.livePushDemo(ownerId: userId)
             }
+            // `-liveCrudDemo`: exercise the real TaskMutation path (priority + complete) against live.
+            if AppConfig.isLiveCrudDemo, case let .signedIn(userId) = auth.state, let userId {
+                await services.liveCrudDemo(ownerId: userId)
+            }
             #endif
         }
         .onChange(of: selection) { _, newValue in

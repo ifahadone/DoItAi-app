@@ -71,5 +71,29 @@ final class AppServices {
         await creator.createTask(title: "From iOS app → Render ✅")
         await syncOnce() // flush the new task to the live API, then pull
     }
+
+    /// DEBUG (`-liveCrudDemo`): create a task then exercise the REAL ``TaskMutation`` path (set
+    /// priority, then complete) against the live API — verifies the update→flush direction without UI
+    /// automation. Syncs between edits so each carries a fresh `baseVersion`.
+    func liveCrudDemo(ownerId: String) async {
+        let creator = TaskCreation(context: container.mainContext, engine: syncEngine,
+                                   ownerId: ownerId, clock: clock, idGenerator: idGenerator)
+        let id = await creator.createTask(title: "Task edited via app ✏️")
+        print("CRUD demo: created id=\(id)")
+        await syncOnce() // flush create; the pull echo stamps serverVersion locally
+
+        let ctx = container.mainContext
+        var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        guard let task = try? ctx.fetch(descriptor).first else { print("CRUD demo: re-fetch FAILED"); return }
+        print("CRUD demo: fetched v=\(task.serverVersion) status=\(task.statusRaw)")
+
+        let mutation = TaskMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator)
+        await mutation.setPriority(task, .p1)
+        await syncOnce()
+        await mutation.toggleComplete(task)
+        await syncOnce()
+        print("CRUD demo: done v=\(task.serverVersion) status=\(task.statusRaw) prio=\(task.priorityRaw)")
+    }
     #endif
 }

@@ -80,4 +80,15 @@ enum AppConfig {
         return false
         #endif
     }
+
+    /// DEBUG-only: with `-liveSync -liveCrudDemo`, the app creates a task then mutates it via the real
+    /// ``TaskMutation`` path (complete + set priority) on launch — verifies the CRUD/update→flush path
+    /// against the live API without UI automation (DevelopmentPlan P1-E). Always `false` in release.
+    static var isLiveCrudDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-liveCrudDemo")
+        #else
+        return false
+        #endif
+    }
 }
