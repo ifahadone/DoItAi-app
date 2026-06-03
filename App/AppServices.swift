@@ -95,5 +95,31 @@ final class AppServices {
         await syncOnce()
         print("CRUD demo: done v=\(task.serverVersion) status=\(task.statusRaw) prio=\(task.priorityRaw)")
     }
+
+    /// DEBUG (`-liveListDemo`): create a list + tag + a task assigned to both via the real mutation
+    /// paths, proving list/tag entities round-trip app→server (DevelopmentPlan P1-F).
+    func liveListDemo(ownerId: String) async {
+        let ctx = container.mainContext
+        let listMut = ListMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator, ownerId: ownerId)
+        let tagMut = TagMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator, ownerId: ownerId)
+        let listId = await listMut.create(name: "Inbox 📥", colorHex: "#F59E0B", icon: "tray")
+        let tagId = await tagMut.create(name: "urgent", colorHex: "#EF4444")
+        await syncOnce()
+
+        let creator = TaskCreation(context: ctx, engine: syncEngine, ownerId: ownerId, clock: clock, idGenerator: idGenerator)
+        let id = await creator.createTask(title: "Triage the inbox", listId: listId)
+        await syncOnce()
+
+        if let tagId {
+            var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == id })
+            descriptor.fetchLimit = 1
+            if let task = try? ctx.fetch(descriptor).first {
+                let taskMut = TaskMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator)
+                await taskMut.setTags(task, tagIds: [tagId])
+                await syncOnce()
+            }
+        }
+        print("LIST demo: done list=\(listId ?? "nil") tag=\(tagId ?? "nil")")
+    }
     #endif
 }

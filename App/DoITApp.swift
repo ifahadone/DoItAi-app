@@ -62,10 +62,14 @@ struct RootTabView: View {
     /// Tracks the selected tab so the center `+` can present Quick Add instead of "selecting" a tab.
     @Environment(AppServices.self) private var services
     @Environment(AuthService.self) private var auth
-    @State private var selection: Tab = .today
+    @State private var selection: Tab
     @State private var showQuickAdd = false
 
     enum Tab: Hashable { case today, plan, add, lists, insights }
+
+    init() {
+        _selection = State(initialValue: AppConfig.startsOnListsTab ? .lists : .today)
+    }
 
     var body: some View {
         TabView(selection: $selection) {
@@ -83,7 +87,7 @@ struct RootTabView: View {
                 .tabItem { Label("Add", systemImage: "plus.circle.fill") }
                 .tag(Tab.add)
 
-            PlaceholderView(title: "Lists", systemImage: "list.bullet.rectangle")
+            ListsView()
                 .tabItem { Label("Lists", systemImage: "tray.full") }
                 .tag(Tab.lists)
 
@@ -104,6 +108,10 @@ struct RootTabView: View {
             // `-liveCrudDemo`: exercise the real TaskMutation path (priority + complete) against live.
             if AppConfig.isLiveCrudDemo, case let .signedIn(userId) = auth.state, let userId {
                 await services.liveCrudDemo(ownerId: userId)
+            }
+            // `-liveListDemo`: create list + tag + assigned task via the real mutation paths.
+            if AppConfig.isLiveListDemo, case let .signedIn(userId) = auth.state, let userId {
+                await services.liveListDemo(ownerId: userId)
             }
             #endif
         }

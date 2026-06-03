@@ -33,9 +33,10 @@ struct TaskCreation {
         self.idGenerator = idGenerator
     }
 
-    /// Create a task with `title`, persist it, and enqueue an upsert op. Returns the new id.
+    /// Create a task with `title` (optionally pre-assigned to `listId`), persist it, and enqueue an
+    /// upsert op. Returns the new id.
     @discardableResult
-    func createTask(title: String) async -> String {
+    func createTask(title: String, listId: String? = nil) async -> String {
         let now = clock.now()
         let id = idGenerator.newID()
 
@@ -49,6 +50,7 @@ struct TaskCreation {
             serverVersion: 0,
             syncStateRaw: LocalSyncState.pendingCreate.rawValue
         )
+        model.listId = listId
         context.insert(model)
         try? context.save()
 
@@ -56,6 +58,14 @@ struct TaskCreation {
         // ONLY writable task columns (ApiSpec §6.1 / TaskPatchSchema, which is strict): the server
         // derives `id` from the op's entityId, `ownerId` from the auth token, and created/updated
         // timestamps from its own clock — including those here is rejected as `invalid_patch`.
+        var fields: [String: AnyCodable] = [
+            "title": .string(title),
+            "status": .int(TaskStatus.inbox.rawValue),
+            "priority": .int(Priority.none.rawValue),
+            "rank": .int(0),
+            "isAllDay": .bool(false),
+        ]
+        if let listId { fields["listId"] = .string(listId) }
         let op = OutboxOp(
             opId: idGenerator.newID(),
             entityType: .task,
@@ -63,13 +73,7 @@ struct TaskCreation {
             op: .upsert,
             baseVersion: 0,
             clientUpdatedAt: now,
-            fields: [
-                "title": .string(title),
-                "status": .int(TaskStatus.inbox.rawValue),
-                "priority": .int(Priority.none.rawValue),
-                "rank": .int(0),
-                "isAllDay": .bool(false)
-            ],
+            fields: fields,
             enqueuedAt: now
         )
         await engine.enqueue(op)

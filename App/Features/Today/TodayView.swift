@@ -28,6 +28,10 @@ struct TodayView: View {
     @Query(filter: #Predicate<TaskListModel> { $0.deletedAt == nil })
     private var lists: [TaskListModel]
 
+    /// Non-deleted tags, to render a task's tag pills (P1-F).
+    @Query(filter: #Predicate<TagModel> { $0.deletedAt == nil })
+    private var allTags: [TagModel]
+
     @State private var isCreating = false
     @State private var newTitle = ""
     /// The task whose detail sheet is open (P1-E).
@@ -79,6 +83,7 @@ struct TodayView: View {
                     list: list(for: task).map {
                         TaskRow.ListBadge(name: $0.name, systemImage: $0.icon, colorHex: $0.colorHex)
                     },
+                    tags: tagNames(for: task),
                     dueText: dueText(for: task),
                     isPendingSync: task.syncState != .synced,
                     onToggle: { Task { await toggleComplete(task) } }
@@ -135,6 +140,11 @@ struct TodayView: View {
     private func list(for task: TaskModel) -> TaskListModel? {
         guard let listId = task.listId else { return nil }
         return lists.first { $0.id == listId }
+    }
+
+    /// Resolve a task's tag ids to names for the row pills.
+    private func tagNames(for task: TaskModel) -> [String] {
+        task.tagIds.compactMap { id in allTags.first { $0.id == id }?.name }
     }
 
     // MARK: - Mutations (P1-E)

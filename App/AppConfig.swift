@@ -91,4 +91,25 @@ enum AppConfig {
         return false
         #endif
     }
+
+    /// DEBUG-only: with `-liveSync -liveListDemo`, the app creates a list + tag + a task assigned to
+    /// both via the real ``ListMutation``/``TagMutation``/``TaskMutation`` paths on launch — verifies
+    /// list/tag entities round-trip app→server (DevelopmentPlan P1-F). Always `false` in release.
+    static var isLiveListDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-liveListDemo")
+        #else
+        return false
+        #endif
+    }
+
+    /// DEBUG-only: with `-startLists`, the app opens on the Lists tab instead of Today (lets the Lists
+    /// screen be screenshot without UI navigation). Always `false` in release.
+    static var startsOnListsTab: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-startLists")
+        #else
+        return false
+        #endif
+    }
 }

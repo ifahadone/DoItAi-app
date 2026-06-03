@@ -13,6 +13,11 @@ struct TaskDetailView: View {
 
     @Bindable var task: TaskModel
 
+    @Query(filter: #Predicate<TaskListModel> { $0.deletedAt == nil }, sort: \TaskListModel.name)
+    private var lists: [TaskListModel]
+    @Query(filter: #Predicate<TagModel> { $0.deletedAt == nil }, sort: \TagModel.name)
+    private var tags: [TagModel]
+
     @State private var titleDraft = ""
     @State private var notesDraft = ""
     @State private var hasDueDate = false
@@ -54,6 +59,34 @@ struct TaskDetailView: View {
                     }
                 }
 
+                if !lists.isEmpty {
+                    Section("List") {
+                        Picker("List", selection: Binding(
+                            get: { task.listId ?? "" },
+                            set: { newValue in Task { await mutate { await mutation.assign(task, toListId: newValue.isEmpty ? nil : newValue) } } }
+                        )) {
+                            Text("None").tag("")
+                            ForEach(lists) { Text($0.name).tag($0.id) }
+                        }
+                    }
+                }
+
+                if !tags.isEmpty {
+                    Section("Tags") {
+                        ForEach(tags) { tag in
+                            Button { Task { await mutate { await toggleTag(tag) } } } label: {
+                                HStack {
+                                    Text(tag.name).foregroundStyle(.primary)
+                                    Spacer()
+                                    if task.tagIds.contains(tag.id) {
+                                        Image(systemName: "checkmark").foregroundStyle(.tint)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Section("Notes") {
                     TextField("Notes", text: $notesDraft, axis: .vertical).lineLimit(3...8)
                 }
@@ -91,6 +124,13 @@ struct TaskDetailView: View {
         await mutation.setNotes(task, notesDraft)
         await mutation.reschedule(task, dueAt: hasDueDate ? dueDraft : nil)
         await syncIfLive()
+    }
+
+    /// Toggle one tag's membership on the task.
+    private func toggleTag(_ tag: TagModel) async {
+        var ids = task.tagIds
+        if let index = ids.firstIndex(of: tag.id) { ids.remove(at: index) } else { ids.append(tag.id) }
+        await mutation.setTags(task, tagIds: ids)
     }
 
     /// Run a single mutation then flush (used by the on-change toggles/pickers).

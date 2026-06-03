@@ -56,6 +56,12 @@ struct TaskMutation {
         await patch(task, fields: ["listId": listId.map(AnyCodable.string) ?? .null]) { $0.listId = listId }
     }
 
+    /// Replace the task's tags (the server resolves `tagIds` into the task_tags join table).
+    func setTags(_ task: TaskModel, tagIds: [String]) async {
+        guard tagIds != task.tagIds else { return }
+        await patch(task, fields: ["tagIds": .array(tagIds.map(AnyCodable.string))]) { $0.tagIds = tagIds }
+    }
+
     // MARK: - Delete
 
     /// Soft-delete locally (the Today query hides `deletedAt != nil`) + enqueue a delete tombstone.
