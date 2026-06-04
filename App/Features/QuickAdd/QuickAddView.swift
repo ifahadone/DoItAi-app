@@ -13,6 +13,7 @@ struct QuickAddView: View {
 
     @State private var input = ""
     @State private var parsed = ParsedQuickAdd(title: "")
+    @State private var aiBusy = false
 
     var body: some View {
         NavigationStack {
@@ -21,6 +22,18 @@ struct QuickAddView: View {
                     TextField("e.g. Lunch with Sam tomorrow 1pm #work !p1", text: $input, axis: .vertical)
                         .lineLimit(1...3)
                         .onChange(of: input) { _, newValue in parsed = QuickAddParser.parse(newValue) }
+                    if services.aiConsentEnabled {
+                        Button {
+                            Task { aiBusy = true; parsed = await services.aiParseOrLocal(input); aiBusy = false }
+                        } label: {
+                            HStack {
+                                Label("Parse with AI", systemImage: "sparkles")
+                                Spacer()
+                                if aiBusy { ProgressView() }
+                            }
+                        }
+                        .disabled(input.trimmingCharacters(in: .whitespaces).isEmpty || aiBusy)
+                    }
                 } footer: {
                     Text("#tag for tags · !p1–!p4 for priority · natural dates like \"tomorrow 9am\".")
                 }

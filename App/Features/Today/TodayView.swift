@@ -37,6 +37,9 @@ struct TodayView: View {
     /// The task whose detail sheet is open (P1-E).
     @State private var selectedTask: TaskModel?
     @State private var showSettings = false
+    @State private var searchText = ""
+    /// AI search result (P4-7): the structured filter applied locally. Nil ⇒ plain text contains.
+    @State private var aiFilter: AISearchFilter?
 
     var body: some View {
         NavigationStack {
@@ -88,6 +91,11 @@ struct TodayView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView().environment(services)
             }
+            .searchable(text: $searchText, prompt: services.aiConsentEnabled ? "Search or ask…" : "Search")
+            .onChange(of: searchText) { _, _ in aiFilter = nil } // editing invalidates the AI filter
+            .onSubmit(of: .search) {
+                Task { aiFilter = await services.aiSearch(searchText) } // NL → structured filter, else plain text
+            }
             .onAppear {
                 #if DEBUG
                 if AppConfig.showSettingsOnLaunch { showSettings = true }
@@ -96,9 +104,27 @@ struct TodayView: View {
         }
     }
 
+    /// Tasks after applying the search (AI structured filter when present, else plain title contains).
+    private var visibleTasks: [TaskModel] {
+        guard !searchText.isEmpty || aiFilter != nil else { return tasks }
+        return tasks.filter(matchesSearch)
+    }
+
+    private func matchesSearch(_ task: TaskModel) -> Bool {
+        guard let filter = aiFilter else {
+            return searchText.isEmpty || task.title.localizedCaseInsensitiveContains(searchText)
+        }
+        if !filter.includeCompleted && task.status == .done { return false }
+        if let text = filter.text, !text.isEmpty, !task.title.localizedCaseInsensitiveContains(text) { return false }
+        if !filter.priorities.isEmpty, !filter.priorities.map(\.asPriority).contains(task.priority) { return false }
+        if let before = filter.dueBefore, let due = task.dueAt, due > before { return false }
+        if let after = filter.dueAfter, let due = task.dueAt, due < after { return false }
+        return true
+    }
+
     private var taskList: some View {
         List {
-            ForEach(tasks) { task in
+            ForEach(visibleTasks) { task in
                 TaskRow(
                     title: task.title,
                     isDone: task.status == .done,
