@@ -44,6 +44,8 @@ public struct RoutineDTO: Codable, Sendable, Equatable, Identifiable {
     public var streakCurrent: Int
     public var streakLongest: Int
     public var graceDays: Int
+    /// Completed days ("YYYY-MM-DD") — server-owned (POST /habits/{id}/log); read-only on the client.
+    public var completions: [String]
     public var steps: [RoutineStep]
 
     public var createdAt: Date
@@ -63,6 +65,7 @@ public struct RoutineDTO: Codable, Sendable, Equatable, Identifiable {
         streakCurrent: Int = 0,
         streakLongest: Int = 0,
         graceDays: Int = 0,
+        completions: [String] = [],
         steps: [RoutineStep] = [],
         createdAt: Date,
         updatedAt: Date,
@@ -80,10 +83,35 @@ public struct RoutineDTO: Codable, Sendable, Equatable, Identifiable {
         self.streakCurrent = streakCurrent
         self.streakLongest = streakLongest
         self.graceDays = graceDays
+        self.completions = completions
         self.steps = steps
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.serverVersion = serverVersion
         self.deletedAt = deletedAt
+    }
+
+    /// Forward-compatible decode: tolerate change_log payloads written before a field existed (e.g.
+    /// `completions`/`steps` on routines created earlier) by defaulting them, so an old entry never
+    /// aborts the whole pull (additive-contract rule, ApiSpec §13).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        ownerId = try c.decode(String.self, forKey: .ownerId)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        colorHex = try c.decodeIfPresent(String.self, forKey: .colorHex) ?? "#4F46E5"
+        anchorTime = try c.decodeIfPresent(String.self, forKey: .anchorTime)
+        recurrence = try c.decodeIfPresent(RoutineRecurrence.self, forKey: .recurrence)
+        chained = try c.decodeIfPresent(Bool.self, forKey: .chained) ?? false
+        isHabit = try c.decodeIfPresent(Bool.self, forKey: .isHabit) ?? false
+        streakCurrent = try c.decodeIfPresent(Int.self, forKey: .streakCurrent) ?? 0
+        streakLongest = try c.decodeIfPresent(Int.self, forKey: .streakLongest) ?? 0
+        graceDays = try c.decodeIfPresent(Int.self, forKey: .graceDays) ?? 0
+        completions = try c.decodeIfPresent([String].self, forKey: .completions) ?? []
+        steps = try c.decodeIfPresent([RoutineStep].self, forKey: .steps) ?? []
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        serverVersion = try c.decodeIfPresent(Int.self, forKey: .serverVersion) ?? 0
+        deletedAt = try c.decodeIfPresent(Date.self, forKey: .deletedAt)
     }
 }

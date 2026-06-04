@@ -311,11 +311,16 @@ extension RoutineModel {
         set { recurrenceData = newValue.flatMap { try? JSONCoding.makeEncoder().encode($0) } }
     }
 
+    var completions: [String] {
+        get { completionsData.flatMap { try? JSONCoding.makeDecoder().decode([String].self, from: $0) } ?? [] }
+        set { completionsData = try? JSONCoding.makeEncoder().encode(newValue) }
+    }
+
     func toDTO() -> RoutineDTO {
         RoutineDTO(
             id: id, ownerId: ownerId, name: name, colorHex: colorHex, anchorTime: anchorTime,
             recurrence: recurrence, chained: chained, isHabit: isHabit, streakCurrent: streakCurrent,
-            streakLongest: streakLongest, graceDays: graceDays, steps: steps,
+            streakLongest: streakLongest, graceDays: graceDays, completions: completions, steps: steps,
             createdAt: createdAt, updatedAt: updatedAt, serverVersion: serverVersion, deletedAt: deletedAt
         )
     }
@@ -343,6 +348,7 @@ extension RoutineModel {
         streakCurrent = dto.streakCurrent
         streakLongest = dto.streakLongest
         graceDays = dto.graceDays
+        completions = dto.completions
         steps = dto.steps
         createdAt = dto.createdAt
         updatedAt = dto.updatedAt

@@ -99,7 +99,7 @@ struct RootTabView: View {
                 .tabItem { Label("Lists", systemImage: "tray.full") }
                 .tag(Tab.lists)
 
-            PlaceholderView(title: "Insights", systemImage: "chart.bar.xaxis")
+            InsightsView()
                 .tabItem { Label("Insights", systemImage: "chart.bar") }
                 .tag(Tab.insights)
         }

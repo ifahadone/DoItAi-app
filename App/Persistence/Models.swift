@@ -286,6 +286,8 @@ final class RoutineModel {
     var streakCurrent: Int
     var streakLongest: Int
     var graceDays: Int
+    /// Encoded `[String]` of completion days ("YYYY-MM-DD") — server-owned.
+    var completionsData: Data?
     /// Encoded `[RoutineStep]` JSON.
     var stepsData: Data?
 
@@ -307,6 +309,7 @@ final class RoutineModel {
         streakCurrent: Int = 0,
         streakLongest: Int = 0,
         graceDays: Int = 0,
+        completionsData: Data? = nil,
         stepsData: Data? = nil,
         createdAt: Date,
         updatedAt: Date,
@@ -324,6 +327,7 @@ final class RoutineModel {
         self.streakCurrent = streakCurrent
         self.streakLongest = streakLongest
         self.graceDays = graceDays
+        self.completionsData = completionsData
         self.stepsData = stepsData
         self.createdAt = createdAt
         self.updatedAt = updatedAt

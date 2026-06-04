@@ -300,11 +300,20 @@ final class AppServices {
         let id = await mutation.create(name: "Read 30 min", isHabit: true, graceDays: 1)
         await syncOnce() // flush the habit so the server has it before /habits/log
 
+        // Log the last 5 days for a visible streak + heatmap.
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        for offset in [-4, -3, -2, -1, 0] {
+            let date = formatter.string(from: clock.now().addingTimeInterval(Double(offset) * 86_400))
+            _ = try? await apiClient.logHabit(routineId: id, date: date)
+        }
+        await syncOnce() // pull the server-updated routine (streak + completions)
+
         var descriptor = FetchDescriptor<RoutineModel>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         if let habit = try? ctx.fetch(descriptor).first {
-            let logged = await mutation.logHabitToday(habit)
-            print("HABIT demo: created \(id), logged=\(logged), streakCurrent=\(habit.streakCurrent)")
+            print("HABIT demo: created \(id), streakCurrent=\(habit.streakCurrent), completions=\(habit.completions.count)")
         }
     }
 
