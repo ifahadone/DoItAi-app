@@ -155,6 +155,16 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: with `-liveSync -liveAlarmDemo`, the app materializes a routine with an alarmed step
+    /// (the alarm chain), adds an explicit alarm, and re-arms the scheduler (DevelopmentPlan P3-6).
+    static var isLiveAlarmDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-liveAlarmDemo")
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: with `-liveSync -liveReminderDemo`, the app inserts a task + 70 reminders and runs
     /// the 64-cap scheduler on launch (DevelopmentPlan P1-I). Always `false` in release.
     static var isLiveReminderDemo: Bool {

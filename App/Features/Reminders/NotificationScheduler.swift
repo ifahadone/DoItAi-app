@@ -10,6 +10,9 @@ import SyncCore
 @MainActor
 struct NotificationScheduler {
     private let center = UNUserNotificationCenter.current()
+    /// Namespace reminder requests so re-arming reminders never clobbers alarm requests (which carry
+    /// the `alarm-` prefix; see ``AlarmScheduler``). Both schedulers share the 64-slot pending pool.
+    private let identifierPrefix = "reminder-"
 
     /// Request alert/sound/badge authorization. Best-effort; returns whether granted.
     @discardableResult
@@ -17,11 +20,13 @@ struct NotificationScheduler {
         (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
 
-    /// Re-arm the rolling window: clear our previously-scheduled reminders, then schedule the planned
-    /// set as calendar-triggered notifications keyed by reminder id (so the next re-arm replaces them).
+    /// Re-arm the rolling window: clear our previously-scheduled *reminders* (by prefix, leaving alarms
+    /// intact), then schedule the planned set as calendar-triggered notifications keyed by reminder id.
     @discardableResult
     func rearm(_ planned: [PlannedNotification]) async -> Int {
-        center.removeAllPendingNotificationRequests()
+        let pending = await center.pendingNotificationRequests()
+        let ours = pending.filter { $0.identifier.hasPrefix(identifierPrefix) }.map(\.identifier)
+        center.removePendingNotificationRequests(withIdentifiers: ours)
         let components: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second]
         var scheduled = 0
         var firstError: String?
@@ -31,7 +36,7 @@ struct NotificationScheduler {
             content.sound = .default
             let dateComponents = Calendar.current.dateComponents(components, from: item.fireAt)
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
-            let request = UNNotificationRequest(identifier: item.reminderId, content: content, trigger: trigger)
+            let request = UNNotificationRequest(identifier: identifierPrefix + item.reminderId, content: content, trigger: trigger)
             do { try await center.add(request); scheduled += 1 }
             catch { if firstError == nil { firstError = "\(error)" } }
         }
@@ -41,8 +46,8 @@ struct NotificationScheduler {
         return scheduled
     }
 
-    /// How many local notifications are currently scheduled (≤ 64). Used to verify the re-arm.
+    /// How many reminder notifications are currently scheduled (≤ 64). Used to verify the re-arm.
     func pendingCount() async -> Int {
-        await center.pendingNotificationRequests().count
+        await center.pendingNotificationRequests().filter { $0.identifier.hasPrefix(identifierPrefix) }.count
     }
 }

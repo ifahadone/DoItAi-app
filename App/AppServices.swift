@@ -155,6 +155,26 @@ final class AppServices {
         return await service.materializeToday()
     }
 
+    /// Re-arm alarm delivery from local alarm records (P3-6). Reuses the same rolling 64-cap planner as
+    /// reminders; alarms fire as Time-Sensitive notifications (delivery is device-bound — see
+    /// ``AlarmScheduler``). Returns `(planned, scheduled)`.
+    @discardableResult
+    func scheduleAlarms() async -> (planned: Int, scheduled: Int) {
+        let ctx = container.mainContext
+        let alarms = (try? ctx.fetch(FetchDescriptor<AlarmModel>(predicate: #Predicate { $0.deletedAt == nil }))) ?? []
+        let tasks = (try? ctx.fetch(FetchDescriptor<TaskModel>())) ?? []
+        let titleById = Dictionary(tasks.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+        let planned: [PlannedNotification] = alarms.compactMap { alarm in
+            guard let fireAt = alarm.fireAt else { return nil }
+            let title = alarm.taskId.flatMap { titleById[$0] } ?? "Alarm"
+            return PlannedNotification(reminderId: alarm.id, taskId: alarm.taskId ?? alarm.id,
+                                       fireAt: fireAt, title: title)
+        }
+        let plan = NotificationPlanner.plan(reminders: planned, now: clock.now())
+        let scheduled = await AlarmScheduler().rearm(plan)
+        return (plan.count, scheduled)
+    }
+
     #if DEBUG
     /// DEBUG (`-livePushDemo`): exercise the REAL create→enqueue→flush path once, proving the
     /// app→server direction against the live API without UI automation. Mirrors `TodayView.addTask`.
@@ -289,6 +309,53 @@ final class AppServices {
         let count = await materializeRoutines()
         await syncOnce()
         print("ROUTINE demo: created routine + materialized \(count) step instances")
+    }
+
+    /// DEBUG (`-liveAlarmDemo`): create a routine whose first step `hasAlarm`, materialize it (which
+    /// forges the alarm "chain" — one Alarm per alarmed step), add one explicit future alarm, then
+    /// re-arm the scheduler. Proves P3-6: alarm entities sync app→server + the 64-cap scheduler runs.
+    func liveAlarmDemo(ownerId: String) async {
+        let ctx = container.mainContext
+        let now = clock.now()
+
+        // A routine with an alarmed first step → materialization creates the alarm chain.
+        let routineId = idGenerator.newID()
+        let routine = RoutineModel(
+            id: routineId, ownerId: ownerId, name: "Wake & train", colorHex: "#EF4444",
+            anchorTime: "07:00", chained: true, isHabit: false,
+            createdAt: now, updatedAt: now, serverVersion: 0, syncStateRaw: LocalSyncState.pendingCreate.rawValue
+        )
+        routine.steps = [
+            RoutineStep(title: "Wake up", minutes: 5, ord: 0, hasAlarm: true),
+            RoutineStep(title: "Train", minutes: 60, ord: 1, hasAlarm: false),
+        ]
+        ctx.insert(routine)
+        try? ctx.save()
+        let stepsField: AnyCodable = .array(routine.steps.map { step in
+            .object(["title": .string(step.title), "minutes": .int(step.minutes),
+                     "ord": .int(step.ord), "hasAlarm": .bool(step.hasAlarm)])
+        })
+        await syncEngine.enqueue(OutboxOp(
+            opId: idGenerator.newID(), entityType: .routine, entityId: routineId, op: .upsert,
+            baseVersion: 0, clientUpdatedAt: now,
+            fields: ["name": .string("Wake & train"), "colorHex": .string("#EF4444"),
+                     "anchorTime": .string("07:00"), "chained": .bool(true), "isHabit": .bool(false),
+                     "graceDays": .int(0), "steps": stepsField],
+            enqueuedAt: now
+        ))
+        await syncOnce()
+        let materialized = await materializeRoutines() // creates Task instances + the alarm chain
+
+        // One explicit future alarm so the scheduler always has something to arm (run-time independent).
+        let alarmMutation = AlarmMutation(context: ctx, engine: syncEngine, clock: clock,
+                                          idGenerator: idGenerator, ownerId: ownerId)
+        _ = await alarmMutation.create(fireAt: now.addingTimeInterval(3600), type: 0, usesLiveActivity: true)
+        await syncOnce() // push routine alarm chain + the explicit alarm to the server
+
+        let alarmCount = (try? ctx.fetch(FetchDescriptor<AlarmModel>(predicate: #Predicate { $0.deletedAt == nil })))?.count ?? -1
+        let result = await scheduleAlarms()
+        let pending = await AlarmScheduler().pendingAlarmCount()
+        print("ALARM demo: materialized=\(materialized), alarmRecords=\(alarmCount), planned=\(result.planned), scheduled=\(result.scheduled), pending=\(pending)")
     }
 
     /// DEBUG (`-liveHabitDemo`): create a habit via the real RoutineMutation, flush it, then log today

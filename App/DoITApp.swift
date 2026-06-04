@@ -143,6 +143,10 @@ struct RootTabView: View {
             if AppConfig.isLiveHabitDemo, case let .signedIn(userId) = auth.state, let userId {
                 await services.liveHabitDemo(ownerId: userId)
             }
+            // `-liveAlarmDemo`: routine alarm chain + explicit alarm + 64-cap scheduler (P3-6).
+            if AppConfig.isLiveAlarmDemo, case let .signedIn(userId) = auth.state, let userId {
+                await services.liveAlarmDemo(ownerId: userId)
+            }
             #endif
         }
         .onChange(of: selection) { _, newValue in
