@@ -141,6 +141,20 @@ final class AppServices {
         return (plan.count, scheduled)
     }
 
+    /// The signed-in user's id (owner of generated rows), or a local placeholder pre-sign-in.
+    private var ownerId: String {
+        if case let .signedIn(userId) = auth.state, let userId { return userId }
+        return "local-user"
+    }
+
+    /// Materialize today's routines into scheduled Task instances (P3-3). Idempotent; safe on launch.
+    @discardableResult
+    func materializeRoutines() async -> Int {
+        let service = RoutineMaterializationService(context: container.mainContext, engine: syncEngine,
+                                                    clock: clock, idGenerator: idGenerator, ownerId: ownerId)
+        return await service.materializeToday()
+    }
+
     #if DEBUG
     /// DEBUG (`-livePushDemo`): exercise the REAL create→enqueue→flush path once, proving the
     /// app→server direction against the live API without UI automation. Mirrors `TodayView.addTask`.
@@ -238,6 +252,43 @@ final class AppServices {
         let runId = await creator.createTask(title: "Focusing now…")
         await syncOnce()
         focus.start(taskId: runId, title: "Focusing now…")
+    }
+
+    /// DEBUG (`-liveRoutineDemo`): create a daily 3-step routine, flush it, then materialize today's
+    /// instances — proves P3-3 (routine → scheduled Task instances tagged routineInstanceOf).
+    func liveRoutineDemo(ownerId: String) async {
+        let ctx = container.mainContext
+        let now = clock.now()
+        let id = idGenerator.newID()
+        let routine = RoutineModel(
+            id: id, ownerId: ownerId, name: "Morning routine", colorHex: "#10B981",
+            anchorTime: "06:30", chained: true, isHabit: false,
+            createdAt: now, updatedAt: now, serverVersion: 0, syncStateRaw: LocalSyncState.pendingCreate.rawValue
+        )
+        routine.steps = [
+            RoutineStep(title: "Meditate", minutes: 10, ord: 0),
+            RoutineStep(title: "Gym", minutes: 60, ord: 1),
+            RoutineStep(title: "Read", minutes: 30, ord: 2),
+        ]
+        ctx.insert(routine)
+        try? ctx.save()
+
+        let stepsField: AnyCodable = .array(routine.steps.map { step in
+            .object(["title": .string(step.title), "minutes": .int(step.minutes),
+                     "ord": .int(step.ord), "hasAlarm": .bool(step.hasAlarm)])
+        })
+        await syncEngine.enqueue(OutboxOp(
+            opId: idGenerator.newID(), entityType: .routine, entityId: id, op: .upsert,
+            baseVersion: 0, clientUpdatedAt: now,
+            fields: ["name": .string("Morning routine"), "colorHex": .string("#10B981"),
+                     "anchorTime": .string("06:30"), "chained": .bool(true), "isHabit": .bool(false),
+                     "graceDays": .int(0), "steps": stepsField],
+            enqueuedAt: now
+        ))
+        await syncOnce()
+        let count = await materializeRoutines()
+        await syncOnce()
+        print("ROUTINE demo: created routine + materialized \(count) step instances")
     }
 
     /// DEBUG (`-liveReminderDemo`): insert a task + 70 future reminders locally, then schedule them —

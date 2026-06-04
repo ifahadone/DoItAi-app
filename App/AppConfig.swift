@@ -135,6 +135,16 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: with `-liveSync -liveRoutineDemo`, the app creates a daily 3-step routine and
+    /// materializes today's instances on launch (DevelopmentPlan P3-3). Always `false` in release.
+    static var isLiveRoutineDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-liveRoutineDemo")
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: with `-liveSync -liveReminderDemo`, the app inserts a task + 70 reminders and runs
     /// the 64-cap scheduler on launch (DevelopmentPlan P1-I). Always `false` in release.
     static var isLiveReminderDemo: Bool {

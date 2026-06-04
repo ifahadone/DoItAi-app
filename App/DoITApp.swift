@@ -135,6 +135,10 @@ struct RootTabView: View {
                 await services.liveFocusDemo(ownerId: userId)
                 showFocusDemo = true
             }
+            // `-liveRoutineDemo`: create a daily routine + materialize today's instances (P3-3).
+            if AppConfig.isLiveRoutineDemo, case let .signedIn(userId) = auth.state, let userId {
+                await services.liveRoutineDemo(ownerId: userId)
+            }
             #endif
         }
         .onChange(of: selection) { _, newValue in
