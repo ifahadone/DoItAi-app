@@ -192,6 +192,8 @@ final class ReminderModel {
     var interruption: Int
     /// The scheduled `UNNotificationRequest` id (set by the local scheduler), if any.
     var notificationId: String?
+    /// JSON-encoded ``SyncCore/ReminderRegion`` for a location reminder (kind 2); nil otherwise.
+    var regionData: Data?
 
     var createdAt: Date
     var updatedAt: Date
@@ -208,6 +210,7 @@ final class ReminderModel {
         offsetMinutes: Int? = nil,
         interruption: Int = 1,
         notificationId: String? = nil,
+        regionData: Data? = nil,
         createdAt: Date,
         updatedAt: Date,
         serverVersion: Int = 0,
@@ -221,6 +224,7 @@ final class ReminderModel {
         self.offsetMinutes = offsetMinutes
         self.interruption = interruption
         self.notificationId = notificationId
+        self.regionData = regionData
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.serverVersion = serverVersion

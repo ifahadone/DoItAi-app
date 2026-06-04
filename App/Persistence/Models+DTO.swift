@@ -219,10 +219,17 @@ extension ReminderModel {
         set { syncStateRaw = newValue.rawValue }
     }
 
+    /// The location reminder's geofence (kind 2), decoded from `regionData`; nil for time-based kinds.
+    var region: ReminderRegion? {
+        get { regionData.flatMap { try? JSONCoding.makeDecoder().decode(ReminderRegion.self, from: $0) } }
+        set { regionData = newValue.flatMap { try? JSONCoding.makeEncoder().encode($0) } }
+    }
+
     func toDTO() -> ReminderDTO {
         ReminderDTO(
             id: id, ownerId: ownerId, taskId: taskId, kind: kind, fireAt: fireAt,
             offsetMinutes: offsetMinutes, interruption: interruption, notificationId: notificationId,
+            region: region,
             createdAt: createdAt, updatedAt: updatedAt, serverVersion: serverVersion, deletedAt: deletedAt
         )
     }
@@ -246,6 +253,7 @@ extension ReminderModel {
         offsetMinutes = dto.offsetMinutes
         interruption = dto.interruption
         notificationId = dto.notificationId
+        region = dto.region
         createdAt = dto.createdAt
         updatedAt = dto.updatedAt
         serverVersion = dto.serverVersion

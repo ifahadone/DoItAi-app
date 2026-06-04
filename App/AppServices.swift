@@ -175,6 +175,35 @@ final class AppServices {
         return (plan.count, scheduled)
     }
 
+    /// Re-arm geofence monitoring from local location reminders (kind 2, P3-7). The ≤20-region pick is
+    /// pure/tested (GeofencePlanner); the monitoring is device-bound (see ``LocationReminderService``).
+    /// Returns the number of regions now monitored.
+    @discardableResult
+    func rearmLocationReminders(userLocation: GeoPoint? = nil) -> Int {
+        let ctx = container.mainContext
+        let reminders = (try? ctx.fetch(FetchDescriptor<ReminderModel>(predicate: #Predicate { $0.deletedAt == nil && $0.kind == 2 }))) ?? []
+        let located: [LocationReminder] = reminders.compactMap { reminder in
+            guard let region = reminder.region else { return nil }
+            return LocationReminder(id: reminder.id, region: region)
+        }
+        return LocationReminderService().rearm(located, userLocation: userLocation)
+    }
+
+    /// Mirror today's scheduled blocks into Apple Calendar (P3-7). The create/update/delete diff is
+    /// pure/tested (CalendarSyncPlanner); the EventKit writes are device-bound (see
+    /// ``CalendarWriteBackService``). Returns the applied counts.
+    @discardableResult
+    func exportToCalendar() async -> (created: Int, updated: Int, deleted: Int) {
+        let ctx = container.mainContext
+        let scheduled = (try? ctx.fetch(FetchDescriptor<TaskModel>(predicate: #Predicate { $0.deletedAt == nil }))) ?? []
+        let blocks: [CalendarExportBlock] = scheduled.compactMap { task in
+            guard let start = task.scheduledStart, let end = task.scheduledEnd else { return nil }
+            return CalendarExportBlock(taskId: task.id, title: task.title,
+                                       startEpoch: start.timeIntervalSince1970, endEpoch: end.timeIntervalSince1970)
+        }
+        return await CalendarWriteBackService().writeBack(blocks: blocks, ownerId: ownerId)
+    }
+
     #if DEBUG
     /// DEBUG (`-livePushDemo`): exercise the REAL create→enqueue→flush path once, proving the
     /// app→server direction against the live API without UI automation. Mirrors `TodayView.addTask`.
@@ -404,6 +433,57 @@ final class AppServices {
         let result = await scheduleReminders()
         let pending = await NotificationScheduler().pendingCount()
         print("REMINDER demo: inserted 70, fetched=\(fetched), planned=\(result.planned), scheduled=\(result.scheduled), pending=\(pending) (cap \(NotificationPlanner.systemPendingCap))")
+    }
+
+    /// DEBUG (`-liveLocationDemo`): create a task + a geofenced (kind 2) reminder via the real
+    /// ReminderMutation, flush it (proving region syncs app→server), then re-arm region monitoring.
+    /// The region round-trip is verifiable on the live server; the monitoring is device-bound.
+    func liveLocationDemo(ownerId: String) async {
+        let ctx = container.mainContext
+        // Push the task first (real outbox path) so it exists on the server before the reminder — the
+        // server's reminders.task_id FK rejects a reminder for a task it hasn't seen.
+        let creator = TaskCreation(context: ctx, engine: syncEngine, ownerId: ownerId,
+                                   clock: clock, idGenerator: idGenerator)
+        let taskId = await creator.createTask(title: "Buy milk near the store")
+        await syncOnce()
+
+        let mutation = ReminderMutation(context: ctx, engine: syncEngine, clock: clock,
+                                        idGenerator: idGenerator, ownerId: ownerId)
+        let region = ReminderRegion(center: GeoPoint(lat: 1.3521, lon: 103.8198, name: "Store"),
+                                    radius: 150, onEntry: true, onExit: false)
+        let id = await mutation.createLocation(taskId: taskId, region: region)
+        await syncOnce() // push the location reminder (with region) to the live server
+
+        let monitored = rearmLocationReminders(userLocation: GeoPoint(lat: 1.35, lon: 103.82))
+        print("LOCATION demo: created reminder \(id.prefix(8)) region=(\(region.center.lat),\(region.center.lon)) r=\(region.radius), monitored=\(monitored) (cap \(GeofencePlanner.systemRegionCap))")
+    }
+
+    /// DEBUG (`-liveCalendarDemo`): insert two scheduled tasks, then run calendar write-back. The diff
+    /// (CalendarSyncPlanner) is pure/tested; the EventKit writes are device-bound (0s without calendar
+    /// permission). Prints both the planned and applied counts.
+    func liveCalendarDemo(ownerId: String) async {
+        let ctx = container.mainContext
+        let now = clock.now()
+        for (i, title) in ["Deep work", "Gym session"].enumerated() {
+            let task = TaskModel(id: idGenerator.newID(), ownerId: ownerId, title: title,
+                                 statusRaw: TaskStatus.scheduled.rawValue, createdAt: now, updatedAt: now,
+                                 serverVersion: 0, syncStateRaw: LocalSyncState.synced.rawValue)
+            task.scheduledStart = now.addingTimeInterval(Double(i + 1) * 3600)
+            task.scheduledEnd = now.addingTimeInterval(Double(i + 1) * 3600 + 1800)
+            ctx.insert(task)
+        }
+        try? ctx.save()
+
+        let scheduled = (try? ctx.fetch(FetchDescriptor<TaskModel>(predicate: #Predicate { $0.deletedAt == nil })))?
+            .filter { $0.scheduledStart != nil } ?? []
+        let blocks = scheduled.compactMap { task -> CalendarExportBlock? in
+            guard let start = task.scheduledStart, let end = task.scheduledEnd else { return nil }
+            return CalendarExportBlock(taskId: task.id, title: task.title,
+                                       startEpoch: start.timeIntervalSince1970, endEpoch: end.timeIntervalSince1970)
+        }
+        let plan = CalendarSyncPlanner.plan(blocks: blocks, existing: [])
+        let applied = await exportToCalendar()
+        print("CALENDAR demo: \(blocks.count) blocks, planned creates=\(plan.creates.count), applied=(c:\(applied.created), u:\(applied.updated), d:\(applied.deleted)) [device-bound: 0s without calendar permission]")
     }
     #endif
 }

@@ -12,8 +12,13 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<!-- EventKit read-only free/busy overlay (P2-5). Required before requesting calendar access. -->
+	<!-- EventKit free/busy overlay (P2-5) + calendar write-back (P3-7). -->
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>DoIT shows your calendar's busy times on the day dial so you can plan around them.</string>
+	<string>DoIT shows your calendar's busy times on the day dial and can mirror your scheduled blocks back to your calendar.</string>
+	<!-- CoreLocation geofenced reminders (P3-7). Region monitoring needs Always authorization. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>DoIT uses your location to remind you about tasks when you arrive at or leave a place.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>DoIT monitors places in the background so location reminders fire even when the app is closed.</string>
 </dict>
 </plist>

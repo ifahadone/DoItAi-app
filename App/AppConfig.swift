@@ -165,6 +165,26 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: with `-liveSync -liveLocationDemo`, the app creates a geofenced reminder and syncs it
+    /// (proving the `region` round-trips to the server), then re-arms monitoring (DevelopmentPlan P3-7).
+    static var isLiveLocationDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-liveLocationDemo")
+        #else
+        return false
+        #endif
+    }
+
+    /// DEBUG-only: with `-liveSync -liveCalendarDemo`, the app schedules tasks and runs calendar
+    /// write-back (the diff is pure/tested; the EventKit writes are device-bound) (DevelopmentPlan P3-7).
+    static var isLiveCalendarDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-liveCalendarDemo")
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: with `-liveSync -liveReminderDemo`, the app inserts a task + 70 reminders and runs
     /// the 64-cap scheduler on launch (DevelopmentPlan P1-I). Always `false` in release.
     static var isLiveReminderDemo: Bool {

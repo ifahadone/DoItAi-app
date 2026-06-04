@@ -147,6 +147,14 @@ struct RootTabView: View {
             if AppConfig.isLiveAlarmDemo, case let .signedIn(userId) = auth.state, let userId {
                 await services.liveAlarmDemo(ownerId: userId)
             }
+            // `-liveLocationDemo`: geofenced reminder syncs region to server + region monitoring (P3-7).
+            if AppConfig.isLiveLocationDemo, case let .signedIn(userId) = auth.state, let userId {
+                await services.liveLocationDemo(ownerId: userId)
+            }
+            // `-liveCalendarDemo`: calendar write-back diff + EventKit apply (device-bound) (P3-7).
+            if AppConfig.isLiveCalendarDemo, case let .signedIn(userId) = auth.state, let userId {
+                await services.liveCalendarDemo(ownerId: userId)
+            }
             #endif
         }
         .onChange(of: selection) { _, newValue in
