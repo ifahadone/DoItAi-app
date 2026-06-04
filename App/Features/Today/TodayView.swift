@@ -33,8 +33,8 @@ struct TodayView: View {
     private var allTags: [TagModel]
 
     /// The user's chosen day-dial style (P5-5 sectograph variants), persisted across launches.
-    @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.aurora.rawValue
-    private var dialStyle: DialStyle { DialStyle(rawValue: dialStyleRaw) ?? .aurora }
+    @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.arc.rawValue
+    private var dialStyle: DialStyle { DialStyle(rawValue: dialStyleRaw) ?? .arc }
 
     @State private var isCreating = false
     @State private var newTitle = ""
@@ -42,6 +42,7 @@ struct TodayView: View {
     @State private var selectedTask: TaskModel?
     @State private var showSettings = false
     @State private var showAssistant = false
+    @State private var showDialPicker = false
     @State private var searchText = ""
     /// AI search result (P4-7): the structured filter applied locally. Nil ⇒ plain text contains.
     @State private var aiFilter: AISearchFilter?
@@ -61,6 +62,10 @@ struct TodayView: View {
                                 .frame(height: 240)
                                 .padding(.top, theme.spacing.sm)
                                 .padding(.horizontal, theme.spacing.xl)
+                                .contentShape(Rectangle())
+                                .onTapGesture { showDialPicker = true }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityHint("Change the day-dial style")
                         }
                         taskList
                     }
@@ -103,6 +108,10 @@ struct TodayView: View {
             }
             .sheet(isPresented: $showAssistant) {
                 AIAssistantView().environment(services)
+            }
+            .sheet(isPresented: $showDialPicker) {
+                NavigationStack { DialStylePicker() }
+                    .presentationDetents([.medium, .large])
             }
             .searchable(text: $searchText, prompt: services.aiConsentEnabled ? "Search or ask…" : "Search")
             .onChange(of: searchText) { _, _ in aiFilter = nil } // editing invalidates the AI filter

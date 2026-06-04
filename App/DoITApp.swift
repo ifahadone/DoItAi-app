@@ -47,7 +47,7 @@ private struct RootView: View {
     var body: some View {
         #if DEBUG
         if AppConfig.isSectographGallery {
-            SectographGallery()
+            NavigationStack { DialStylePicker() }
         } else {
             shell
         }

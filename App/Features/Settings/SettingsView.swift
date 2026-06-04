@@ -13,7 +13,7 @@ struct SettingsView: View {
     /// AI opt-in (ApiSpec §9.6). Mirrors `users.ai_consent` on the server; the AI features no-op when off.
     @AppStorage("aiConsentEnabled") private var aiConsent = false
     /// The Today sectograph style (P5-5). Read by ``TodayView`` via the same key.
-    @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.aurora.rawValue
+    @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.arc.rawValue
 
     @State private var exporting = false
     @State private var lastExport: String?
@@ -44,15 +44,20 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Picker("Style", selection: $dialStyleRaw) {
-                        ForEach(DialStyle.allCases) { style in
-                            Text(style.title).tag(style.rawValue)
+                    NavigationLink {
+                        DialStylePicker()
+                    } label: {
+                        HStack {
+                            Label("Day-dial style", systemImage: "circle.dotted")
+                            Spacer()
+                            Text(DialStyle(rawValue: dialStyleRaw)?.title ?? "Arc")
+                                .foregroundStyle(.secondary)
                         }
                     }
                 } header: {
                     Text("Day dial")
                 } footer: {
-                    Text("How the sectograph renders today's blocks on the Today screen.")
+                    Text("Choose how the sectograph renders today's blocks — tap the dial on Today to switch, too.")
                 }
 
                 Section {
