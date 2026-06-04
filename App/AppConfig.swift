@@ -221,8 +221,8 @@ enum AppConfig {
     static var isRunningDemo: Bool {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
-        return args.contains("-uiDemo") || args.contains("-calendarDemo") || args.contains("-startSettings")
-            || args.contains("-startAssistant")
+        return args.contains("-uiDemo") || args.contains("-calendarDemo")
+            || args.contains { $0.hasPrefix("-start") } // automation/screenshot args (settings/assistant/tab)
             || args.contains { $0.hasPrefix("-live") && $0.hasSuffix("Demo") }
         #else
         return false

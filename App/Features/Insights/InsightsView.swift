@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import SyncCore
 import DesignSystem
+import Charts
 
 /// The Insights tab (AppSpec §5.9, DevelopmentPlan P3-5): a quick summary + per-habit streak cards
 /// with a "don't break the chain" completion heatmap (the last 70 days). Streaks come from the
@@ -14,12 +15,23 @@ struct InsightsView: View {
     private var habits: [RoutineModel]
     @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil })
     private var tasks: [TaskModel]
+    @Query(filter: #Predicate<TaskListModel> { $0.deletedAt == nil })
+    private var lists: [TaskListModel]
+
+    @State private var range: AnalyticsRange = .week
+
+    enum AnalyticsRange: String, CaseIterable, Identifiable {
+        case week = "Week", month = "Month"
+        var id: String { rawValue }
+        var days: Int { self == .week ? 7 : 30 }
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: theme.spacing.lg) {
                     summary
+                    analytics
                     if habits.isEmpty {
                         EmptyStateView(title: "No habits yet", systemImage: "flame",
                                        message: "Track a habit in Lists → Routines & Habits to build a streak.")
@@ -47,6 +59,119 @@ struct InsightsView: View {
             statCard(value: "\(focusMinutes)m", label: "Focused", systemImage: "timer")
             statCard(value: "\(habits.count)", label: "Habits", systemImage: "flame.fill")
         }
+    }
+
+    // MARK: - Analytics (P6-3, AppSpec §5.9)
+
+    private var taskStats: [TaskStat] {
+        tasks.map { task in
+            TaskStat(id: task.id, isDone: task.status == .done, createdAt: task.createdAt, dueAt: task.dueAt,
+                     completedAt: task.completedAt, scheduledStart: task.scheduledStart, scheduledEnd: task.scheduledEnd,
+                     actualMinutes: task.actualMinutes, listId: task.listId)
+        }
+    }
+
+    private var interval: DateInterval {
+        let now = services.clock.now()
+        let start = Calendar.current.date(byAdding: .day, value: -range.days, to: now) ?? now
+        return DateInterval(start: start, end: now)
+    }
+
+    @ViewBuilder
+    private var analytics: some View {
+        let now = services.clock.now()
+        let stats = taskStats
+        Picker("Range", selection: $range) {
+            ForEach(AnalyticsRange.allCases) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+
+        if stats.count < 3 {
+            EmptyStateView(title: "Not enough data yet", systemImage: "chart.bar",
+                           message: "Create and complete a few tasks to see your insights.")
+                .frame(minHeight: 160)
+        } else {
+            let completion = Analytics.completion(stats, in: interval, now: now)
+            let byHour = Analytics.productivityByHour(stats, calendar: .current)
+            let byList = Analytics.timeByList(stats)
+            let backlog = Analytics.backlog(stats, now: now)
+
+            completionCard(completion)
+            productivityCard(byHour)
+            if !byList.isEmpty { timeAllocationCard(byList) }
+            backlogCard(backlog)
+        }
+    }
+
+    private func completionCard(_ c: Analytics.Completion) -> some View {
+        cardShell("Completion", systemImage: "checkmark.seal") {
+            HStack(spacing: theme.spacing.lg) {
+                metric("\(c.completionRatePct.map { "\($0)%" } ?? "—")", "Completion")
+                metric("\(c.onTimePct.map { "\($0)%" } ?? "—")", "On time")
+                metric("\(c.completed)/\(c.created)", "Done/new")
+                metric("\(c.overdue)", "Overdue")
+            }
+        }
+    }
+
+    private func productivityCard(_ hours: [Int]) -> some View {
+        cardShell("Productivity by hour", systemImage: "clock") {
+            VStack(alignment: .leading, spacing: 4) {
+                Chart(Array(hours.enumerated()), id: \.offset) { hour, count in
+                    BarMark(x: .value("Hour", hour), y: .value("Done", count))
+                        .foregroundStyle(theme.colors.accent)
+                }
+                .chartXScale(domain: 0...23)
+                .chartXAxis { AxisMarks(values: [0, 6, 12, 18]) }
+                .frame(height: 90)
+                if let peak = Analytics.peakHour(taskStats, calendar: .current) {
+                    Text("Most productive around \(peak):00").font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func timeAllocationCard(_ slices: [Analytics.TimeSlice]) -> some View {
+        cardShell("Time by list", systemImage: "chart.pie") {
+            Chart(slices.prefix(6).map { $0 }) { slice in
+                BarMark(x: .value("Minutes", slice.minutes), y: .value("List", listName(slice.listId)))
+                    .foregroundStyle(theme.colors.accent)
+            }
+            .frame(height: CGFloat(min(slices.count, 6)) * 28 + 12)
+        }
+    }
+
+    private func backlogCard(_ b: Analytics.Backlog) -> some View {
+        cardShell("Backlog health", systemImage: "tray.full") {
+            HStack(spacing: theme.spacing.lg) {
+                metric("\(b.inbox)", "Open")
+                metric("\(b.overdue)", "Overdue")
+                metric("\(b.medianAgeDays)d", "Median age")
+            }
+        }
+    }
+
+    private func metric(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(.title3.weight(.semibold)).monospacedDigit()
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func cardShell<Content: View>(_ title: String, systemImage: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: theme.spacing.sm) {
+            Label(title, systemImage: systemImage).font(.subheadline.weight(.medium))
+            content()
+        }
+        .padding(theme.spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.medium))
+    }
+
+    private func listName(_ id: String?) -> String {
+        guard let id else { return "No list" }
+        return lists.first { $0.id == id }?.name ?? "List"
     }
 
     private func statCard(value: String, label: String, systemImage: String) -> some View {
