@@ -270,6 +270,116 @@ final class ChecklistItemModel {
     }
 }
 
+// MARK: - Routine (+ habit)
+
+@Model
+final class RoutineModel {
+    @Attribute(.unique) var id: String
+    var ownerId: String
+    var name: String
+    var colorHex: String
+    var anchorTime: String?
+    /// Encoded `RoutineRecurrence` JSON (kept as Data so the @Model stays simple).
+    var recurrenceData: Data?
+    var chained: Bool
+    var isHabit: Bool
+    var streakCurrent: Int
+    var streakLongest: Int
+    var graceDays: Int
+    /// Encoded `[RoutineStep]` JSON.
+    var stepsData: Data?
+
+    var createdAt: Date
+    var updatedAt: Date
+    var serverVersion: Int
+    var deletedAt: Date?
+    var syncStateRaw: Int
+
+    init(
+        id: String,
+        ownerId: String,
+        name: String,
+        colorHex: String = "#4F46E5",
+        anchorTime: String? = nil,
+        recurrenceData: Data? = nil,
+        chained: Bool = false,
+        isHabit: Bool = false,
+        streakCurrent: Int = 0,
+        streakLongest: Int = 0,
+        graceDays: Int = 0,
+        stepsData: Data? = nil,
+        createdAt: Date,
+        updatedAt: Date,
+        serverVersion: Int = 0,
+        syncStateRaw: Int = LocalSyncState.pendingCreate.rawValue
+    ) {
+        self.id = id
+        self.ownerId = ownerId
+        self.name = name
+        self.colorHex = colorHex
+        self.anchorTime = anchorTime
+        self.recurrenceData = recurrenceData
+        self.chained = chained
+        self.isHabit = isHabit
+        self.streakCurrent = streakCurrent
+        self.streakLongest = streakLongest
+        self.graceDays = graceDays
+        self.stepsData = stepsData
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.serverVersion = serverVersion
+        self.syncStateRaw = syncStateRaw
+    }
+}
+
+// MARK: - Alarm
+
+@Model
+final class AlarmModel {
+    @Attribute(.unique) var id: String
+    var ownerId: String
+    var taskId: String?
+    var fireAt: Date?
+    var type: Int
+    var soundName: String?
+    var snoozeMinutes: Int?
+    var usesLiveActivity: Bool
+
+    var createdAt: Date
+    var updatedAt: Date
+    var serverVersion: Int
+    var deletedAt: Date?
+    var syncStateRaw: Int
+
+    init(
+        id: String,
+        ownerId: String,
+        taskId: String? = nil,
+        fireAt: Date? = nil,
+        type: Int = 0,
+        soundName: String? = nil,
+        snoozeMinutes: Int? = nil,
+        usesLiveActivity: Bool = false,
+        createdAt: Date,
+        updatedAt: Date,
+        serverVersion: Int = 0,
+        syncStateRaw: Int = LocalSyncState.pendingCreate.rawValue
+    ) {
+        self.id = id
+        self.ownerId = ownerId
+        self.taskId = taskId
+        self.fireAt = fireAt
+        self.type = type
+        self.soundName = soundName
+        self.snoozeMinutes = snoozeMinutes
+        self.usesLiveActivity = usesLiveActivity
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.serverVersion = serverVersion
+        self.syncStateRaw = syncStateRaw
+    }
+}
+
 /// Per-entity local sync state (AppSpec §6 `SyncState`). Kept in the app target (not SyncCore) since
 /// it describes local persistence, not the wire contract.
 enum LocalSyncState: Int, Codable, Sendable {

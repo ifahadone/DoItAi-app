@@ -16,7 +16,9 @@ enum PersistenceContainer {
         TaskListModel.self,
         TagModel.self,
         ReminderModel.self,
-        ChecklistItemModel.self
+        ChecklistItemModel.self,
+        RoutineModel.self,
+        AlarmModel.self
     ])
 
     /// The shared, App-Group-backed container used by the app and its extensions.

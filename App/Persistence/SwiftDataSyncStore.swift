@@ -27,6 +27,8 @@ struct SwiftDataSyncStore: SyncStore {
         case .tag:  try await applyTag(change)
         case .reminder: try await applyReminder(change)
         case .checklist: try await applyChecklist(change)
+        case .routine: try await applyRoutine(change)
+        case .alarm: try await applyAlarm(change)
         default:
             // Forward-compat: an entity type this build doesn't model yet decodes upstream and is
             // simply skipped here, never crashing (ApiSpec §13).
@@ -111,6 +113,36 @@ struct SwiftDataSyncStore: SyncStore {
         if context.hasChanges { try context.save() }
     }
 
+    @MainActor
+    private func applyRoutine(_ change: SyncPullChange) async throws {
+        let context = container.mainContext
+        let existing = try fetchRoutine(id: change.entityId, in: context)
+        switch change.op {
+        case .delete:
+            markDeleted(existing, version: change.version)
+        case .upsert:
+            guard let payload = change.payload else { return }
+            let dto = try Self.decode(payload, as: RoutineDTO.self)
+            if let existing { existing.apply(dto) } else { context.insert(RoutineModel.make(from: dto)) }
+        }
+        if context.hasChanges { try context.save() }
+    }
+
+    @MainActor
+    private func applyAlarm(_ change: SyncPullChange) async throws {
+        let context = container.mainContext
+        let existing = try fetchAlarm(id: change.entityId, in: context)
+        switch change.op {
+        case .delete:
+            markDeleted(existing, version: change.version)
+        case .upsert:
+            guard let payload = change.payload else { return }
+            let dto = try Self.decode(payload, as: AlarmDTO.self)
+            if let existing { existing.apply(dto) } else { context.insert(AlarmModel.make(from: dto)) }
+        }
+        if context.hasChanges { try context.save() }
+    }
+
     // MARK: - Helpers
 
     /// Apply a tombstone: mark the local row deleted (Phase 0 keeps the row; a Phase 1 GC purges it).
@@ -153,6 +185,18 @@ struct SwiftDataSyncStore: SyncStore {
         return try context.fetch(d).first
     }
 
+    @MainActor
+    private func fetchRoutine(id: String, in context: ModelContext) throws -> RoutineModel? {
+        var d = FetchDescriptor<RoutineModel>(predicate: #Predicate { $0.id == id }); d.fetchLimit = 1
+        return try context.fetch(d).first
+    }
+
+    @MainActor
+    private func fetchAlarm(id: String, in context: ModelContext) throws -> AlarmModel? {
+        var d = FetchDescriptor<AlarmModel>(predicate: #Predicate { $0.id == id }); d.fetchLimit = 1
+        return try context.fetch(d).first
+    }
+
     /// Re-materialize an erased pull payload into a concrete DTO using the shared coders.
     static func decode<T: Decodable>(_ payload: AnyCodable, as _: T.Type) throws -> T {
         let data = try JSONCoding.makeEncoder().encode(payload)
@@ -172,3 +216,5 @@ extension TaskListModel: SyncTombstonable {}
 extension TagModel: SyncTombstonable {}
 extension ReminderModel: SyncTombstonable {}
 extension ChecklistItemModel: SyncTombstonable {}
+extension RoutineModel: SyncTombstonable {}
+extension AlarmModel: SyncTombstonable {}

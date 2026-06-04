@@ -292,3 +292,105 @@ extension ChecklistItemModel {
         syncState = .synced
     }
 }
+
+// MARK: - RoutineModel
+
+extension RoutineModel {
+    var syncState: LocalSyncState {
+        get { LocalSyncState(rawValue: syncStateRaw) ?? .synced }
+        set { syncStateRaw = newValue.rawValue }
+    }
+
+    var steps: [RoutineStep] {
+        get { stepsData.flatMap { try? JSONCoding.makeDecoder().decode([RoutineStep].self, from: $0) } ?? [] }
+        set { stepsData = try? JSONCoding.makeEncoder().encode(newValue) }
+    }
+
+    var recurrence: RoutineRecurrence? {
+        get { recurrenceData.flatMap { try? JSONCoding.makeDecoder().decode(RoutineRecurrence.self, from: $0) } }
+        set { recurrenceData = newValue.flatMap { try? JSONCoding.makeEncoder().encode($0) } }
+    }
+
+    func toDTO() -> RoutineDTO {
+        RoutineDTO(
+            id: id, ownerId: ownerId, name: name, colorHex: colorHex, anchorTime: anchorTime,
+            recurrence: recurrence, chained: chained, isHabit: isHabit, streakCurrent: streakCurrent,
+            streakLongest: streakLongest, graceDays: graceDays, steps: steps,
+            createdAt: createdAt, updatedAt: updatedAt, serverVersion: serverVersion, deletedAt: deletedAt
+        )
+    }
+
+    static func make(from dto: RoutineDTO) -> RoutineModel {
+        let model = RoutineModel(
+            id: dto.id, ownerId: dto.ownerId, name: dto.name, colorHex: dto.colorHex,
+            anchorTime: dto.anchorTime, chained: dto.chained, isHabit: dto.isHabit,
+            streakCurrent: dto.streakCurrent, streakLongest: dto.streakLongest, graceDays: dto.graceDays,
+            createdAt: dto.createdAt, updatedAt: dto.updatedAt, serverVersion: dto.serverVersion,
+            syncStateRaw: LocalSyncState.synced.rawValue
+        )
+        model.apply(dto)
+        return model
+    }
+
+    func apply(_ dto: RoutineDTO) {
+        ownerId = dto.ownerId
+        name = dto.name
+        colorHex = dto.colorHex
+        anchorTime = dto.anchorTime
+        recurrence = dto.recurrence
+        chained = dto.chained
+        isHabit = dto.isHabit
+        streakCurrent = dto.streakCurrent
+        streakLongest = dto.streakLongest
+        graceDays = dto.graceDays
+        steps = dto.steps
+        createdAt = dto.createdAt
+        updatedAt = dto.updatedAt
+        serverVersion = dto.serverVersion
+        deletedAt = dto.deletedAt
+        syncState = .synced
+    }
+}
+
+// MARK: - AlarmModel
+
+extension AlarmModel {
+    var syncState: LocalSyncState {
+        get { LocalSyncState(rawValue: syncStateRaw) ?? .synced }
+        set { syncStateRaw = newValue.rawValue }
+    }
+
+    func toDTO() -> AlarmDTO {
+        AlarmDTO(
+            id: id, ownerId: ownerId, taskId: taskId, fireAt: fireAt, type: type,
+            soundName: soundName, snoozeMinutes: snoozeMinutes, usesLiveActivity: usesLiveActivity,
+            createdAt: createdAt, updatedAt: updatedAt, serverVersion: serverVersion, deletedAt: deletedAt
+        )
+    }
+
+    static func make(from dto: AlarmDTO) -> AlarmModel {
+        let model = AlarmModel(
+            id: dto.id, ownerId: dto.ownerId, taskId: dto.taskId, fireAt: dto.fireAt, type: dto.type,
+            soundName: dto.soundName, snoozeMinutes: dto.snoozeMinutes, usesLiveActivity: dto.usesLiveActivity,
+            createdAt: dto.createdAt, updatedAt: dto.updatedAt, serverVersion: dto.serverVersion,
+            syncStateRaw: LocalSyncState.synced.rawValue
+        )
+        model.apply(dto)
+        return model
+    }
+
+    func apply(_ dto: AlarmDTO) {
+        ownerId = dto.ownerId
+        taskId = dto.taskId
+        fireAt = dto.fireAt
+        type = dto.type
+        soundName = dto.soundName
+        snoozeMinutes = dto.snoozeMinutes
+        usesLiveActivity = dto.usesLiveActivity
+        createdAt = dto.createdAt
+        updatedAt = dto.updatedAt
+        serverVersion = dto.serverVersion
+        deletedAt = dto.deletedAt
+        syncState = .synced
+    }
+}
