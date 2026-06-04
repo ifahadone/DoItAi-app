@@ -195,6 +195,19 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: true when ANY headless demo arg is present (`-live…Demo`, `-uiDemo`, `-calendarDemo`).
+    /// Used to suppress permission prompts (notifications/location/calendar) during automated launches —
+    /// a system prompt would block the headless run with no one to tap "Allow". Always `false` in release.
+    static var isRunningDemo: Bool {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("-uiDemo") || args.contains("-calendarDemo")
+            || args.contains { $0.hasPrefix("-live") && $0.hasSuffix("Demo") }
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: `-startTab <today|plan|lists|insights>` (or the shorthand `-startLists`) opens the
     /// app on that tab instead of Today — lets any tab be screenshot without UI navigation. Returns the
     /// tab name, or `nil` for the default. Always `nil` in release.

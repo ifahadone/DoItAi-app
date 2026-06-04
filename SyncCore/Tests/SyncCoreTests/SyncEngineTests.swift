@@ -36,6 +36,20 @@ private actor RecordingStore: SyncStore {
     }
 }
 
+private struct DecodeError: Error {}
+
+/// A store that throws for changes whose entityId is in `failIds` (simulating an undecodable payload),
+/// and records the rest — to prove one bad change doesn't abort the whole pull.
+private actor SelectivelyFailingStore: SyncStore {
+    let failIds: Set<String>
+    private(set) var applied: [SyncPullChange] = []
+    init(failIds: Set<String>) { self.failIds = failIds }
+    func apply(_ change: SyncPullChange) async throws {
+        if failIds.contains(change.entityId) { throw DecodeError() }
+        applied.append(change)
+    }
+}
+
 // MARK: - Tests
 
 final class SyncEngineTests: XCTestCase {
@@ -135,6 +149,57 @@ final class SyncEngineTests: XCTestCase {
         _ = try await engine.applyPull(using: transport)
         let cursors = await transport.pullCursors
         XCTAssertEqual(cursors, ["start"])
+    }
+
+    func testApplyPullPagesUntilHasMoreFalse() async throws {
+        let store = RecordingStore()
+        let engine = DefaultSyncEngine(clock: clock, store: store)
+        let transport = FakeTransport()
+        // Page 1 (initial cursor nil) → hasMore; page 2 (cursor "p2") → done.
+        await transport.setPullResponder { cursor in
+            if cursor == "p2" {
+                return SyncPullResponse(
+                    changes: [SyncPullChange(entityType: .task, entityId: "c", op: .upsert, version: 3, seq: "3")],
+                    nextCursor: "p3", hasMore: false)
+            }
+            return SyncPullResponse(
+                changes: [
+                    SyncPullChange(entityType: .task, entityId: "a", op: .upsert, version: 1, seq: "1"),
+                    SyncPullChange(entityType: .task, entityId: "b", op: .upsert, version: 2, seq: "2"),
+                ],
+                nextCursor: "p2", hasMore: true)
+        }
+
+        let applied = try await engine.applyPull(using: transport)
+        XCTAssertEqual(applied, 3, "should apply both pages, not just the first")
+        let cursors = await transport.pullCursors
+        XCTAssertEqual(cursors, [nil, "p2"], "should request page 2 with the advanced cursor, then stop")
+        let finalCursor = await engine.currentCursor
+        XCTAssertEqual(finalCursor, "p3")
+        let recorded = await store.applied
+        XCTAssertEqual(recorded.map(\.entityId), ["a", "b", "c"])
+    }
+
+    func testApplyPullSkipsUndecodableChangeWithoutAborting() async throws {
+        let store = SelectivelyFailingStore(failIds: ["bad"])
+        let engine = DefaultSyncEngine(clock: clock, store: store)
+        let transport = FakeTransport()
+        await transport.setPullResponder { _ in
+            SyncPullResponse(
+                changes: [
+                    SyncPullChange(entityType: .task, entityId: "ok1", op: .upsert, version: 1, seq: "1"),
+                    SyncPullChange(entityType: .routine, entityId: "bad", op: .upsert, version: 2, seq: "2"),
+                    SyncPullChange(entityType: .task, entityId: "ok2", op: .upsert, version: 3, seq: "3"),
+                ],
+                nextCursor: "done", hasMore: false)
+        }
+
+        let applied = try await engine.applyPull(using: transport)
+        XCTAssertEqual(applied, 2, "the undecodable change is skipped, the other two apply")
+        let recorded = await store.applied
+        XCTAssertEqual(recorded.map(\.entityId), ["ok1", "ok2"], "good changes survive a bad one")
+        let cursor = await engine.currentCursor
+        XCTAssertEqual(cursor, "done", "cursor still advances — no infinite retry on the bad change")
     }
 
     func testLoadAndSnapshotOutbox() async {

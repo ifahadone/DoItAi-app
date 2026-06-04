@@ -109,6 +109,9 @@ struct RootTabView: View {
             // for all signed-in sessions (not just the dev demo mode).
             if AppConfig.isLiveSync { await services.syncOnce() }
             await services.publishAgenda() // refresh the agenda widget snapshot (P1-J)
+            // Ask for notification permission once the shell is up (reminders + alarm chains need it);
+            // self-guards against headless demo launches so the prompt can't block them.
+            await services.requestNotificationAuthorizationIfNeeded()
             #if DEBUG
             // `-livePushDemo`: prove app→server by creating + flushing one task via the real path.
             if AppConfig.isLivePushDemo, case let .signedIn(userId) = auth.state, let userId {

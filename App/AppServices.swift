@@ -186,7 +186,13 @@ final class AppServices {
             guard let region = reminder.region else { return nil }
             return LocationReminder(id: reminder.id, region: region)
         }
-        return LocationReminderService().rearm(located, userLocation: userLocation)
+        let service = LocationReminderService()
+        // Ask for Always location in context — only when there's actually a geofence to monitor (and
+        // not during a headless demo). Non-blocking; monitoring still no-ops until the user grants it.
+        if !located.isEmpty && !AppConfig.isRunningDemo {
+            service.requestAuthorization()
+        }
+        return service.rearm(located, userLocation: userLocation)
     }
 
     /// Mirror today's scheduled blocks into Apple Calendar (P3-7). The create/update/delete diff is
@@ -201,7 +207,21 @@ final class AppServices {
             return CalendarExportBlock(taskId: task.id, title: task.title,
                                        startEpoch: start.timeIntervalSince1970, endEpoch: end.timeIntervalSince1970)
         }
-        return await CalendarWriteBackService().writeBack(blocks: blocks, ownerId: ownerId)
+        let service = CalendarWriteBackService()
+        // Ask for calendar write access in context — only when there's something to export (and not
+        // during a headless demo). writeBack no-ops without authorization, so this stays safe.
+        if !blocks.isEmpty && !AppConfig.isRunningDemo {
+            _ = await service.requestAccess()
+        }
+        return await service.writeBack(blocks: blocks, ownerId: ownerId)
+    }
+
+    /// Ask once for notification authorization (reminders + alarm chains share the notification center,
+    /// P1-I/P3-6). Call at launch after sign-in; suppressed during headless demos so the system prompt
+    /// can't block them. Idempotent — iOS returns the existing status without re-prompting.
+    func requestNotificationAuthorizationIfNeeded() async {
+        guard !AppConfig.isRunningDemo else { return }
+        _ = await NotificationScheduler().requestAuthorization()
     }
 
     #if DEBUG

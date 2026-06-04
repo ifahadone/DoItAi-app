@@ -14,10 +14,12 @@ struct NotificationScheduler {
     /// the `alarm-` prefix; see ``AlarmScheduler``). Both schedulers share the 64-slot pending pool.
     private let identifierPrefix = "reminder-"
 
-    /// Request alert/sound/badge authorization. Best-effort; returns whether granted.
+    /// Request alert/sound/badge + Time-Sensitive authorization (the latter so alarm chains can break
+    /// through Focus, P3-6). Best-effort, idempotent — after the first determination iOS returns the
+    /// existing status without re-prompting. Returns whether granted.
     @discardableResult
     func requestAuthorization() async -> Bool {
-        (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        (try? await center.requestAuthorization(options: [.alert, .sound, .badge, .timeSensitive])) ?? false
     }
 
     /// Re-arm the rolling window: clear our previously-scheduled *reminders* (by prefix, leaving alarms

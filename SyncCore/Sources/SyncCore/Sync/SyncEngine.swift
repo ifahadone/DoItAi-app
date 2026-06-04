@@ -147,24 +147,36 @@ public actor DefaultSyncEngine: SyncEngine {
         var applied = 0
         var pageCursor = cursor
 
-        // TODO(Phase 1): page until `hasMore == false`, applying each page in a local transaction;
-        //   persist the advancing cursor after each page so an interrupted pull resumes cleanly
-        //   (ApiSpec §6.2). For Phase 0 we fetch and apply exactly one page.
-        let response = try await transport.pull(cursor: pageCursor, limit: 500)
+        // Page until the server reports no more deltas (ApiSpec §6.2). Terminate on `hasMore`, NOT on
+        // `nextCursor` — the server returns `nextCursor = base64(maxSeq)` which stays non-null at the
+        // end, so a `while (cursor)` loop would re-fetch the final page forever. The cursor advances
+        // per page so an interrupted pull resumes cleanly.
+        while true {
+            let response = try await transport.pull(cursor: pageCursor, limit: 500)
 
-        for change in response.changes {
-            // TODO(Phase 1): decode `change.payload` into the concrete DTO by `entityType`, then map
-            //   into the SwiftData model. Last-writer-wins is already resolved server-side for the
-            //   authoritative row; the client trusts the pulled `version`/`payload`. Skip entity
-            //   types this build doesn't model (forward-compat, ApiSpec §13).
-            if let store {
-                try await store.apply(change)
+            for change in response.changes {
+                // Apply each change defensively. A single undecodable/unknown change (e.g. an old
+                // payload missing a field a newer build expects) is SKIPPED — not thrown — so it can't
+                // abort the whole pull and wedge the cursor into an infinite retry. The per-DTO lenient
+                // decoders handle additive fields (ApiSpec §13); this is the backstop for the rest.
+                if let store {
+                    do {
+                        try await store.apply(change)
+                        applied += 1
+                    } catch {
+                        #if DEBUG
+                        print("[SyncEngine] skipped undecodable change \(change.entityType)/\(change.entityId): \(error)")
+                        #endif
+                    }
+                } else {
+                    applied += 1
+                }
             }
-            applied += 1
-        }
 
-        pageCursor = response.nextCursor
-        cursor = pageCursor
+            pageCursor = response.nextCursor
+            cursor = pageCursor
+            if !response.hasMore { break }
+        }
         return applied
     }
 
