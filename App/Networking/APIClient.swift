@@ -368,7 +368,7 @@ actor APIClient: SyncTransport {
 
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.timeoutInterval = 30 // every external call needs a timeout (global rule)
+        request.timeoutInterval = 60 // bounded (global rule), but long enough to ride a free-tier cold start
         request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
         request.setValue(clientVersion, forHTTPHeaderField: "X-Client-Version")
         request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Request-Id")

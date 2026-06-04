@@ -48,11 +48,20 @@ struct SignInView: View {
             .foregroundStyle(colorScheme == .dark ? .black : .white)
             .padding(.horizontal, theme.spacing.xl)
             .accessibilityIdentifier("signInWithAppleButton")
+            .disabled(auth.isSigningIn)
 
-            if let error = auth.lastError {
+            if auth.isSigningIn {
+                VStack(spacing: 4) {
+                    ProgressView()
+                    Text("Connecting… the server may take a moment to wake up.")
+                        .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, theme.spacing.xl)
+            } else if let error = auth.lastError {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(theme.colors.statusOverdue)
+                    .multilineTextAlignment(.center)
                     .padding(.horizontal, theme.spacing.xl)
             }
 
@@ -69,6 +78,7 @@ struct SignInView: View {
             .buttonStyle(.bordered)
             .padding(.horizontal, theme.spacing.xl)
             .accessibilityIdentifier("devSignInButton")
+            .disabled(auth.isSigningIn)
             #endif
 
             Spacer().frame(height: theme.spacing.xxl)

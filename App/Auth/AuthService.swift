@@ -29,6 +29,9 @@ final class AuthService: NSObject, TokenProviding {
     private(set) var state: State = .unknown
     /// Set when a sign-in attempt fails, for surfacing in the UI.
     private(set) var lastError: String?
+    /// True while a sign-in network exchange is in flight, so the UI can show a spinner + disable the
+    /// buttons (the dev backend may cold-start for ~30–50s).
+    private(set) var isSigningIn = false
 
     private let keychain: KeychainStore
     private let idGenerator: IDGenerator
@@ -86,6 +89,8 @@ final class AuthService: NSObject, TokenProviding {
     /// without the Sign in with Apple capability. Never compiled into release.
     func devSignIn() async {
         lastError = nil
+        isSigningIn = true
+        defer { isSigningIn = false }
         guard let apiClient else { state = .signedOut; return }
         let sub = "ios-dev-user"
         let request = AppleSignInRequest(
@@ -134,6 +139,8 @@ final class AuthService: NSObject, TokenProviding {
     /// Drive the full flow: present Apple sheet → exchange at the API → persist tokens.
     func signInWithApple() async {
         lastError = nil
+        isSigningIn = true
+        defer { isSigningIn = false }
         do {
             let credential = try await requestAppleCredential()
             guard
