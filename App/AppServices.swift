@@ -20,6 +20,8 @@ final class AppServices {
     let auth: AuthService
     /// The running focus-timer session (P2-4).
     let focus: FocusController
+    /// Read-only EventKit calendar access for the free/busy overlay (P2-5).
+    let calendar = CalendarService()
 
     private let container: ModelContainer
 

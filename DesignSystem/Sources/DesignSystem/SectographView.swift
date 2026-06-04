@@ -8,11 +8,13 @@ public struct SectographView: View {
     @Environment(\.theme) private var theme
 
     private let items: [SectographItem]
+    private let busy: [SectographItem]
     private let ringWidth: CGFloat
     private let showNowHand: Bool
 
-    public init(items: [SectographItem], ringWidth: CGFloat = 24, showNowHand: Bool = true) {
+    public init(items: [SectographItem], busy: [SectographItem] = [], ringWidth: CGFloat = 24, showNowHand: Bool = true) {
         self.items = items
+        self.busy = busy
         self.ringWidth = ringWidth
         self.showNowHand = showNowHand
     }
@@ -23,6 +25,7 @@ public struct SectographView: View {
             ZStack {
                 Canvas { context, _ in
                     drawTrack(context, layout)
+                    drawBusy(context, layout)
                     drawHourTicks(context, layout)
                     drawArcs(context, layout)
                 }
@@ -58,6 +61,19 @@ public struct SectographView: View {
             let path = Path { p in p.move(to: inner); p.addLine(to: outer) }
             context.stroke(path, with: .color(theme.colors.separator.opacity(isMajor ? 0.8 : 0.4)),
                            lineWidth: isMajor ? 1.5 : 0.75)
+        }
+    }
+
+    /// Free/busy events from the calendar (P2-5) — a muted gray band behind the task arcs.
+    private func drawBusy(_ context: GraphicsContext, _ layout: SectographLayout) {
+        for arc in layout.arcs(for: busy) {
+            let path = Path { p in
+                p.addArc(center: layout.center, radius: midRadius(layout),
+                         startAngle: .radians(arc.startAngle), endAngle: .radians(max(arc.endAngle, arc.startAngle + 0.01)),
+                         clockwise: false)
+            }
+            context.stroke(path, with: .color(theme.colors.separator.opacity(0.85)),
+                           style: StrokeStyle(lineWidth: ringWidth - 2, lineCap: .butt))
         }
     }
 

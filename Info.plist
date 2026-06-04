@@ -12,5 +12,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- EventKit read-only free/busy overlay (P2-5). Required before requesting calendar access. -->
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>DoIT shows your calendar's busy times on the day dial so you can plan around them.</string>
 </dict>
 </plist>

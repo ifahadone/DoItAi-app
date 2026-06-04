@@ -45,8 +45,9 @@ struct TodayView: View {
                 } else {
                     VStack(spacing: 0) {
                         let dialItems = sectographItems
-                        if !dialItems.isEmpty {
-                            SectographView(items: dialItems)
+                        let busy = busyItems
+                        if !dialItems.isEmpty || !busy.isEmpty {
+                            SectographView(items: dialItems, busy: busy)
                                 .frame(height: 240)
                                 .padding(.top, theme.spacing.sm)
                                 .padding(.horizontal, theme.spacing.xl)
@@ -176,6 +177,20 @@ struct TodayView: View {
             }
             return nil
         }
+    }
+
+    /// Calendar free/busy blocks for the dial overlay (P2-5): real EventKit data when authorized,
+    /// or sample blocks under DEBUG `-calendarDemo` so the overlay is screenshot-verifiable.
+    private var busyItems: [SectographItem] {
+        #if DEBUG
+        if AppConfig.isCalendarDemo {
+            return [
+                SectographItem(id: "busy:standup", startMinute: 11 * 60, endMinute: 12 * 60),
+                SectographItem(id: "busy:review", startMinute: 14 * 60, endMinute: 15 * 60 + 30),
+            ]
+        }
+        #endif
+        return services.calendar.busyItems(now: services.clock.now())
     }
 
     // MARK: - Mutations (P1-E)

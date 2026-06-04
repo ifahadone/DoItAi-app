@@ -114,6 +114,16 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: with `-calendarDemo`, the Today dial shows sample free/busy blocks (so the EventKit
+    /// overlay is screenshot-verifiable without granting calendar access). Always `false` in release.
+    static var isCalendarDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-calendarDemo")
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: with `-liveSync -liveFocusDemo`, the app logs 25 focus-minutes on one task (via the
     /// real FocusSession→actualMinutes path) and starts a live focus session for another, presenting
     /// the running timer (DevelopmentPlan P2-4). Always `false` in release.
