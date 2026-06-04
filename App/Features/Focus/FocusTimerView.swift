@@ -10,6 +10,7 @@ struct FocusTimerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(AppServices.self) private var services
 
     var body: some View {
@@ -26,7 +27,7 @@ struct FocusTimerView: View {
                             .font(.system(size: 64, weight: .light, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(session.isRunning ? theme.colors.accent : .secondary)
-                            .contentTransition(.numericText())
+                            .contentTransition(reduceMotion ? .identity : .numericText())
                     }
 
                     HStack(spacing: theme.spacing.lg) {

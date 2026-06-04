@@ -102,13 +102,20 @@ final class AppServices {
         let ctx = container.mainContext
         let tasks = (try? ctx.fetch(FetchDescriptor<TaskModel>(predicate: #Predicate { $0.deletedAt == nil }))) ?? []
         let now = clock.now()
+        let calendar = Calendar.current
+        func minute(_ date: Date?) -> Int? {
+            guard let date, calendar.isDate(date, inSameDayAs: now) else { return nil }
+            let c = calendar.dateComponents([.hour, .minute], from: date)
+            return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        }
         let items: [AgendaItem] = tasks.compactMap { task in
             let bucket = SmartListClassifier.classify(status: task.status, dueAt: task.dueAt,
                                                       scheduledStart: task.scheduledStart, now: now)
             guard bucket == .today || bucket == .overdue else { return nil }
             let dueText = task.dueAt.map { $0.formatted(date: .omitted, time: .shortened) }
             return AgendaItem(taskId: task.id, title: task.title, dueText: dueText,
-                              isDone: task.status == .done, priorityLevel: task.priority.rawValue)
+                              isDone: task.status == .done, priorityLevel: task.priority.rawValue,
+                              startMinute: minute(task.scheduledStart), endMinute: minute(task.scheduledEnd))
         }
         let snapshot = AgendaSnapshot(items: items, generatedAtEpoch: now.timeIntervalSince1970)
         let defaults = UserDefaults(suiteName: AppConfig.appGroupIdentifier) ?? .standard

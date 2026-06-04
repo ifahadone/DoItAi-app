@@ -8,15 +8,22 @@ public struct AgendaItem: Codable, Sendable, Equatable, Identifiable {
     public var isDone: Bool
     /// Wire priority level (0 none … 4 p1) for the widget's flag.
     public var priorityLevel: Int
+    /// Scheduled block start/end as minutes-into-day, for the sectograph widget's dial (P2-6). Optional
+    /// (decode-safe for older snapshots) and `nil` for due-only items.
+    public var startMinute: Int?
+    public var endMinute: Int?
 
     public var id: String { taskId }
 
-    public init(taskId: String, title: String, dueText: String? = nil, isDone: Bool = false, priorityLevel: Int = 0) {
+    public init(taskId: String, title: String, dueText: String? = nil, isDone: Bool = false,
+                priorityLevel: Int = 0, startMinute: Int? = nil, endMinute: Int? = nil) {
         self.taskId = taskId
         self.title = title
         self.dueText = dueText
         self.isDone = isDone
         self.priorityLevel = priorityLevel
+        self.startMinute = startMinute
+        self.endMinute = endMinute
     }
 }
 

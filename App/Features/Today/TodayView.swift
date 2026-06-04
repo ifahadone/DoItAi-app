@@ -47,7 +47,7 @@ struct TodayView: View {
                         let dialItems = sectographItems
                         let busy = busyItems
                         if !dialItems.isEmpty || !busy.isEmpty {
-                            SectographView(items: dialItems, busy: busy)
+                            SectographView(items: dialItems, busy: busy, labels: dialLabels)
                                 .frame(height: 240)
                                 .padding(.top, theme.spacing.sm)
                                 .padding(.horizontal, theme.spacing.xl)
@@ -177,6 +177,22 @@ struct TodayView: View {
             }
             return nil
         }
+    }
+
+    /// VoiceOver labels for the dial's blocks (P2-6) — "Title, at 9:00 AM".
+    private var dialLabels: [String: String] {
+        let calendar = Calendar.current
+        func timeString(_ minute: Int) -> String {
+            let date = calendar.date(from: DateComponents(hour: minute / 60, minute: minute % 60)) ?? .now
+            return date.formatted(date: .omitted, time: .shortened)
+        }
+        var result: [String: String] = [:]
+        for item in sectographItems {
+            if let task = tasks.first(where: { $0.id == item.id }) {
+                result[item.id] = "\(task.title), at \(timeString(item.startMinute))"
+            }
+        }
+        return result
     }
 
     /// Calendar free/busy blocks for the dial overlay (P2-5): real EventKit data when authorized,

@@ -109,5 +109,7 @@ struct AgendaWidget: Widget {
 struct DoITWidgetBundle: WidgetBundle {
     var body: some Widget {
         AgendaWidget()
+        SectographWidget()
+        // FocusLiveActivity is registered automatically (ActivityKit) once the target supports it.
     }
 }

@@ -15,6 +15,10 @@ simulator setup).
   (App Intents). They compile in the app target and already work from Shortcuts/Siri.
 - **`Widget/DoITAgendaWidget.swift`** (this folder) — the `WidgetBundle` + `TimelineProvider` + view,
   reading the snapshot and using `CompleteTaskIntent` for in-place completion.
+- **`Widget/DoITSectographWidget.swift`** (P2-6) — a home/lock **day-dial** widget that reuses
+  `DesignSystem.SectographView` over the snapshot's scheduled blocks (same layout core as the app).
+- **`Widget/FocusLiveActivity.swift`** (P2-4) — the running-focus-block **Live Activity** (lock screen
+  + Dynamic Island), reusing the `FocusSession` fields.
 
 Decoupling: the widget reads a published snapshot, so it depends only on `SyncCore` — never on the
 app's SwiftData models.

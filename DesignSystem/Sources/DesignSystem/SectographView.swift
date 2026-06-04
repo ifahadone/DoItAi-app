@@ -6,15 +6,20 @@ import SwiftUI
 /// so the same core also drives the widgets and Live Activity.
 public struct SectographView: View {
     @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let items: [SectographItem]
     private let busy: [SectographItem]
+    /// Accessible description per item id (e.g. "Deep work, 9:00 to 11:00 AM") for VoiceOver.
+    private let labels: [String: String]
     private let ringWidth: CGFloat
     private let showNowHand: Bool
 
-    public init(items: [SectographItem], busy: [SectographItem] = [], ringWidth: CGFloat = 24, showNowHand: Bool = true) {
+    public init(items: [SectographItem], busy: [SectographItem] = [], labels: [String: String] = [:],
+                ringWidth: CGFloat = 24, showNowHand: Bool = true) {
         self.items = items
         self.busy = busy
+        self.labels = labels
         self.ringWidth = ringWidth
         self.showNowHand = showNowHand
     }
@@ -30,7 +35,9 @@ public struct SectographView: View {
                     drawArcs(context, layout)
                 }
                 cardinalLabels(layout)
-                if showNowHand {
+                // The now-hand advances once a minute (a discrete jump, not animation) — inherently
+                // Reduce-Motion-safe; hidden entirely when Reduce Motion is on for extra calm.
+                if showNowHand && !reduceMotion {
                     TimelineView(.periodic(from: .now, by: 60)) { tick in
                         nowHand(layout, date: tick.date)
                     }
@@ -38,8 +45,22 @@ public struct SectographView: View {
             }
         }
         .aspectRatio(1, contentMode: .fit)
-        .accessibilityLabel("Day dial")
-        .accessibilityValue("\(items.count) scheduled blocks")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Day dial — \(items.count) scheduled blocks")
+        .accessibilityChildren {
+            VStack(spacing: 1) {
+                ForEach(items) { item in
+                    Color.clear
+                        .accessibilityElement()
+                        .accessibilityLabel(labels[item.id] ?? "Scheduled block")
+                }
+            }
+        }
+        .accessibilityRotor("Scheduled blocks") {
+            ForEach(items) { item in
+                AccessibilityRotorEntry(labels[item.id] ?? "Scheduled block", id: item.id)
+            }
+        }
     }
 
     private var midRadius: (SectographLayout) -> CGFloat { { ($0.innerRadius + $0.outerRadius) / 2 } }
