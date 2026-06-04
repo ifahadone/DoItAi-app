@@ -112,6 +112,88 @@ actor APIClient: SyncTransport {
         return response.routine
     }
 
+    // MARK: - AI proxy (Phase 4, ApiSpec §9). All throw on 403 ai_consent_required / 429 budget /
+    // 503 ai_unavailable so callers fall back to the on-device/rules path.
+
+    func aiConsent() async throws -> Bool {
+        struct R: Decodable { let aiConsent: Bool }
+        let r: R = try await send(method: "GET", path: "ai/consent", bodyData: nil, authenticated: true, idempotent: false)
+        return r.aiConsent
+    }
+
+    @discardableResult
+    func setAiConsent(_ consent: Bool) async throws -> Bool {
+        struct Body: Encodable, Sendable { let consent: Bool }
+        struct R: Decodable { let aiConsent: Bool }
+        let r: R = try await send(method: "POST", path: "ai/consent", body: Body(consent: consent), authenticated: true, idempotent: false)
+        return r.aiConsent
+    }
+
+    func aiParse(_ request: AIParseRequest) async throws -> AIParsedTask {
+        let r: AIParseResponse = try await send(method: "POST", path: "ai/parse", body: request, authenticated: true, idempotent: false)
+        return r.task
+    }
+
+    func aiSchedule(_ request: AIScheduleRequest) async throws -> AIScheduleProposal {
+        try await send(method: "POST", path: "ai/schedule", body: request, authenticated: true, idempotent: false)
+    }
+
+    func aiSearch(_ request: AISearchRequest) async throws -> AISearchFilter {
+        let r: AISearchResponse = try await send(method: "POST", path: "ai/search", body: request, authenticated: true, idempotent: false)
+        return r.filter
+    }
+
+    func aiRoutineSuggest(_ request: AIRoutineSuggestRequest) async throws -> [AIRoutineSuggestion] {
+        let r: AIRoutineSuggestions = try await send(method: "POST", path: "ai/routine-suggest", body: request, authenticated: true, idempotent: false)
+        return r.suggestions
+    }
+
+    /// Stream a morning brief as SSE narrative events (ApiSpec §9.5).
+    func aiBriefStream(_ request: AIBriefRequest) -> AsyncThrowingStream<AINarrativeEvent, Error> {
+        streamNarrative(path: "ai/brief", body: request)
+    }
+
+    /// Stream a weekly review as SSE narrative events.
+    func aiReviewStream(_ request: AIReviewRequest) -> AsyncThrowingStream<AINarrativeEvent, Error> {
+        streamNarrative(path: "ai/review", body: request)
+    }
+
+    private func streamNarrative<Body: Encodable & Sendable>(path: String, body: Body) -> AsyncThrowingStream<AINarrativeEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    try await self.runSSE(path: path, body: body) { event in continuation.yield(event) }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private func runSSE<Body: Encodable & Sendable>(
+        path: String, body: Body, onEvent: @Sendable (AINarrativeEvent) -> Void
+    ) async throws {
+        let data = try encoder.encode(body)
+        var request = try await makeRequest(
+            method: "POST", path: path, queryItems: [], bodyData: data, authenticated: true, idempotent: false
+        )
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            throw APIError.http(status: http.statusCode, body: Data())
+        }
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data: ") else { continue }
+            if let event = AINarrativeEvent.parse(dataPayload: String(line.dropFirst(6))) {
+                onEvent(event)
+                if case .done = event { break }
+            }
+        }
+    }
+
     // MARK: - Core request pipeline
 
     /// Encode `body` (if any) and delegate to the data-based sender. The typed entry point used by

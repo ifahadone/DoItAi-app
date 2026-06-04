@@ -9,6 +9,8 @@ struct SettingsView: View {
 
     /// Persisted preference; read on launch to decide whether to export after sync.
     @AppStorage("calendarWriteBackEnabled") private var calendarWriteBack = false
+    /// AI opt-in (ApiSpec §9.6). Mirrors `users.ai_consent` on the server; the AI features no-op when off.
+    @AppStorage("aiConsentEnabled") private var aiConsent = false
 
     @State private var exporting = false
     @State private var lastExport: String?
@@ -16,6 +18,15 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Toggle("Enable the AI assistant", isOn: $aiConsent)
+                } header: {
+                    Text("AI Assistant")
+                } footer: {
+                    Text("The AI parses your quick-add, auto-plans your day, and writes briefs & reviews — via the secure backend (your data is never used for training). With it off, DoIT uses on-device parsing and rules-based planning only.")
+                }
+                .onChange(of: aiConsent) { _, on in Task { await services.setAiConsent(on) } }
+
                 Section {
                     Toggle("Mirror scheduled blocks to Calendar", isOn: $calendarWriteBack)
                     Button {

@@ -235,6 +235,138 @@ final class AppServices {
         await requestNotificationAuthorization()
     }
 
+    // MARK: - AI assistant (Phase 4, ApiSpec §9). Every method degrades gracefully: any failure (no
+    // consent, no key/503, budget/429, offline) returns nil/empty and the UI uses the on-device path.
+
+    /// Local mirror of the AI opt-in so the UI reflects it without a round-trip (set by the toggle).
+    var aiConsentEnabled: Bool { UserDefaults.standard.bool(forKey: "aiConsentEnabled") }
+
+    /// Toggle AI consent: persist locally + tell the server (the gate reads `users.ai_consent`).
+    func setAiConsent(_ enabled: Bool) async {
+        UserDefaults.standard.set(enabled, forKey: "aiConsentEnabled")
+        _ = try? await apiClient.setAiConsent(enabled)
+    }
+
+    /// Cloud NL parse with on-device fallback. Returns the unified ``SyncCore/ParsedQuickAdd`` the
+    /// quick-add preview renders — so the UI is identical whether AI or the local parser produced it.
+    func aiParseOrLocal(_ text: String) async -> ParsedQuickAdd {
+        if aiConsentEnabled {
+            let ctx = container.mainContext
+            let lists = (try? ctx.fetch(FetchDescriptor<TaskListModel>(predicate: #Predicate { $0.deletedAt == nil })))?.map(\.name) ?? []
+            let tags = (try? ctx.fetch(FetchDescriptor<TagModel>(predicate: #Predicate { $0.deletedAt == nil })))?.map(\.name) ?? []
+            let request = AIParseRequest(text: text, nowIso: TaskMutation.iso(clock.now()),
+                                         lists: lists.isEmpty ? nil : lists, tags: tags.isEmpty ? nil : tags)
+            if let parsed = try? await apiClient.aiParse(request) {
+                return ParsedQuickAdd(title: parsed.title, dueAt: parsed.due,
+                                      tagNames: parsed.tags, priority: parsed.priority.asPriority)
+            }
+        }
+        return QuickAddParser.parse(text) // offline / AI-off / failure fallback
+    }
+
+    /// NL search → a structured filter (cloud only; nil ⇒ caller uses its plain text filter).
+    func aiSearch(_ query: String) async -> AISearchFilter? {
+        guard aiConsentEnabled else { return nil }
+        return try? await apiClient.aiSearch(AISearchRequest(query: query, nowIso: TaskMutation.iso(clock.now())))
+    }
+
+    /// Auto-plan: gather unscheduled open tasks + today's free slots, ask the server to rank (by the
+    /// optional intent) + place. Returns nil if there's nothing to plan or AI is off.
+    func aiAutoPlan(intent: String?) async -> AIScheduleProposal? {
+        guard aiConsentEnabled else { return nil }
+        let ctx = container.mainContext
+        let now = clock.now()
+        let open = (try? ctx.fetch(FetchDescriptor<TaskModel>(predicate: #Predicate { $0.deletedAt == nil })))?
+            .filter { $0.scheduledStart == nil && $0.status != .done } ?? []
+        guard !open.isEmpty else { return nil }
+        let tasks = open.prefix(50).map { task in
+            AIScheduleTask(id: task.id, title: task.title, durationMinutes: 30,
+                           priority: AIPriority(task.priority), dueIso: task.dueAt.map { TaskMutation.iso($0) })
+        }
+        let request = AIScheduleRequest(tasks: Array(tasks), freeSlots: todayFreeSlots(now: now),
+                                        bufferMinutes: 10, intent: intent)
+        return try? await apiClient.aiSchedule(request)
+    }
+
+    /// Apply an accepted plan: set each proposed block's task schedule (writes via the normal sync).
+    func applyPlan(_ blocks: [AIProposedBlock]) async {
+        let ctx = container.mainContext
+        let mutation = TaskMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator)
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        for block in blocks {
+            guard let start = parser.date(from: block.startIso), let end = parser.date(from: block.endIso) else { continue }
+            let taskId = block.taskId
+            var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == taskId })
+            descriptor.fetchLimit = 1
+            if let task = try? ctx.fetch(descriptor).first {
+                await mutation.setSchedule(task, start: start, end: end)
+            }
+        }
+        if AppConfig.isLiveSync { await syncOnce() }
+    }
+
+    /// Stream today's morning brief (empty stream if AI is off).
+    func briefStream() async -> AsyncThrowingStream<AINarrativeEvent, Error> {
+        guard aiConsentEnabled else { return AsyncThrowingStream { $0.finish() } }
+        let ctx = container.mainContext
+        let now = clock.now()
+        let today = (try? ctx.fetch(FetchDescriptor<TaskModel>(predicate: #Predicate { $0.deletedAt == nil })))?
+            .filter { task in (task.dueAt.map { Calendar.current.isDate($0, inSameDayAs: now) } ?? false)
+                || (task.scheduledStart.map { Calendar.current.isDate($0, inSameDayAs: now) } ?? false) } ?? []
+        let tasks = today.prefix(50).map { task in
+            AIBriefTask(title: task.title, priority: AIPriority(task.priority),
+                        dueIso: task.dueAt.map { TaskMutation.iso($0) },
+                        scheduledStartIso: task.scheduledStart.map { TaskMutation.iso($0) })
+        }
+        return await apiClient.aiBriefStream(AIBriefRequest(nowIso: TaskMutation.iso(now), tasks: Array(tasks)))
+    }
+
+    /// Stream a weekly review from the last 7 days' stats (empty stream if AI is off).
+    func reviewStream() async -> AsyncThrowingStream<AINarrativeEvent, Error> {
+        guard aiConsentEnabled else { return AsyncThrowingStream { $0.finish() } }
+        let ctx = container.mainContext
+        let now = clock.now()
+        let weekAgo = now.addingTimeInterval(-7 * 86_400)
+        let tasks = (try? ctx.fetch(FetchDescriptor<TaskModel>(predicate: #Predicate { $0.deletedAt == nil }))) ?? []
+        let created = tasks.filter { $0.createdAt >= weekAgo }.count
+        let completed = tasks.filter { $0.status == .done && $0.updatedAt >= weekAgo }.count
+        let focus = tasks.reduce(0) { $0 + ($1.actualMinutes ?? 0) }
+        let habits = (try? ctx.fetch(FetchDescriptor<RoutineModel>(predicate: #Predicate { $0.deletedAt == nil && $0.isHabit })))?
+            .prefix(20).map { AIReviewHabit(name: $0.name, streakCurrent: $0.streakCurrent) } ?? []
+        let request = AIReviewRequest(weekStartIso: TaskMutation.iso(weekAgo), completedCount: completed,
+                                      createdCount: created, focusMinutes: focus, habits: Array(habits))
+        return await apiClient.aiReviewStream(request)
+    }
+
+    /// Today's free slots = the working-hours window (09:00–18:00 local) minus any already-scheduled
+    /// blocks, starting no earlier than now. A pragmatic default until working hours are user-set.
+    private func todayFreeSlots(now: Date) -> [AITimeSlot] {
+        let cal = Calendar.current
+        let startOfDay = cal.startOfDay(for: now)
+        guard let workStart = cal.date(byAdding: .hour, value: 9, to: startOfDay),
+              let workEnd = cal.date(byAdding: .hour, value: 18, to: startOfDay) else { return [] }
+        let windowStart = max(now, workStart)
+        guard windowStart < workEnd else { return [] }
+
+        // Subtract existing scheduled blocks that overlap the window.
+        let ctx = container.mainContext
+        let scheduled = ((try? ctx.fetch(FetchDescriptor<TaskModel>(predicate: #Predicate { $0.deletedAt == nil })))?
+            .compactMap { task -> (Date, Date)? in
+                guard let s = task.scheduledStart, let e = task.scheduledEnd, e > windowStart, s < workEnd else { return nil }
+                return (max(s, windowStart), min(e, workEnd))
+            } ?? []).sorted { $0.0 < $1.0 }
+
+        var slots: [AITimeSlot] = []
+        var cursor = windowStart
+        for (s, e) in scheduled {
+            if s > cursor { slots.append(AITimeSlot(startIso: TaskMutation.iso(cursor), endIso: TaskMutation.iso(s))) }
+            cursor = max(cursor, e)
+        }
+        if cursor < workEnd { slots.append(AITimeSlot(startIso: TaskMutation.iso(cursor), endIso: TaskMutation.iso(workEnd))) }
+        return slots
+    }
+
     #if DEBUG
     /// DEBUG (`-livePushDemo`): exercise the REAL create→enqueue→flush path once, proving the
     /// app→server direction against the live API without UI automation. Mirrors `TodayView.addTask`.
