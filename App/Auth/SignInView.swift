@@ -56,6 +56,21 @@ struct SignInView: View {
                     .padding(.horizontal, theme.spacing.xl)
             }
 
+            #if DEBUG
+            // Developer sign-in: skips the Apple capability by minting a stub identity token the dev
+            // backend (`APPLE_STUB_VERIFICATION=true`) decodes without verifying. Never in release.
+            Button {
+                Task { await auth.devSignIn() }
+            } label: {
+                Label("Developer sign-in", systemImage: "hammer.fill")
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .padding(.horizontal, theme.spacing.xl)
+            .accessibilityIdentifier("devSignInButton")
+            #endif
+
             Spacer().frame(height: theme.spacing.xxl)
         }
         .padding()

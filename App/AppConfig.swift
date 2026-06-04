@@ -24,19 +24,20 @@ enum AppConfig {
     static let liveRenderBaseURL = URL(string: "https://doit-api-2clz.onrender.com/api/v1")!
 
     static var apiBaseURL: URL {
-        #if DEBUG
-        // Live-sync dev mode (`-liveSync`) targets the live Render dev API by default; pass
-        // `-localApi` alongside it to hit a local stub server on :3001 instead (faster iteration).
-        if isLiveSync {
-            return isLocalApi ? URL(string: "http://localhost:3001/api/v1")! : liveRenderBaseURL
-        }
-        #endif
+        // An explicit Info.plist override always wins (per-scheme dev config, DevelopmentPlan 0.2).
         if let raw = Bundle.main.object(forInfoDictionaryKey: "DOIT_API_BASE_URL") as? String,
            let url = URL(string: raw) {
             return url
         }
-        // Default placeholder host (ApiSpec §3). Set your production domain at deploy.
+        #if DEBUG
+        // DEBUG builds target the live Render dev/staging API by default, so sign-in (incl. the
+        // Developer sign-in button) and sync work out of the box without launch arguments. Pass
+        // `-localApi` to hit a local stub server on :3001 instead (faster iteration).
+        return isLocalApi ? URL(string: "http://localhost:3001/api/v1")! : liveRenderBaseURL
+        #else
+        // Release: the production domain (set at deploy). Placeholder until then (ApiSpec §3).
         return URL(string: "https://doit.app/api/v1")!
+        #endif
     }
 
     /// DEBUG-only demo switch. When the app is launched with the `-uiDemo` argument, it bypasses the
