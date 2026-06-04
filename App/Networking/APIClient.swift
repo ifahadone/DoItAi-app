@@ -100,6 +100,18 @@ actor APIClient: SyncTransport {
         try await syncPull(cursor: cursor, limit: limit)
     }
 
+    /// `POST /habits/{id}/log` — record a habit completion; the server recomputes the streak
+    /// authoritatively and returns the updated routine (DevelopmentPlan P3-2/P3-4).
+    func logHabit(routineId: String, date: String) async throws -> RoutineDTO {
+        struct LogBody: Encodable, Sendable { let date: String }
+        struct LogResponse: Decodable { let routine: RoutineDTO }
+        let response: LogResponse = try await send(
+            method: "POST", path: "habits/\(routineId)/log",
+            body: LogBody(date: date), authenticated: true, idempotent: true
+        )
+        return response.routine
+    }
+
     // MARK: - Core request pipeline
 
     /// Encode `body` (if any) and delegate to the data-based sender. The typed entry point used by

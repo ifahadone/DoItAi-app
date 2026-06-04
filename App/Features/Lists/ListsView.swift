@@ -26,6 +26,14 @@ struct ListsView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    NavigationLink {
+                        RoutinesView()
+                    } label: {
+                        Label("Routines & Habits", systemImage: "repeat")
+                    }
+                }
+
                 Section("Lists") {
                     if lists.isEmpty {
                         Text("No lists yet — tap + to create one.").font(.subheadline).foregroundStyle(.secondary)

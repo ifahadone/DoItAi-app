@@ -291,6 +291,23 @@ final class AppServices {
         print("ROUTINE demo: created routine + materialized \(count) step instances")
     }
 
+    /// DEBUG (`-liveHabitDemo`): create a habit via the real RoutineMutation, flush it, then log today
+    /// — proving P3-4's habit log path (client → /habits/log → server streak → synced back).
+    func liveHabitDemo(ownerId: String) async {
+        let ctx = container.mainContext
+        let mutation = RoutineMutation(context: ctx, engine: syncEngine, apiClient: apiClient,
+                                       clock: clock, idGenerator: idGenerator, ownerId: ownerId)
+        let id = await mutation.create(name: "Read 30 min", isHabit: true, graceDays: 1)
+        await syncOnce() // flush the habit so the server has it before /habits/log
+
+        var descriptor = FetchDescriptor<RoutineModel>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        if let habit = try? ctx.fetch(descriptor).first {
+            let logged = await mutation.logHabitToday(habit)
+            print("HABIT demo: created \(id), logged=\(logged), streakCurrent=\(habit.streakCurrent)")
+        }
+    }
+
     /// DEBUG (`-liveReminderDemo`): insert a task + 70 future reminders locally, then schedule them —
     /// proves the reminder `@Model` + the 64-cap re-arm scheduler (pending count caps at 64).
     func liveReminderDemo(ownerId: String) async {

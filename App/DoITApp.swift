@@ -139,6 +139,10 @@ struct RootTabView: View {
             if AppConfig.isLiveRoutineDemo, case let .signedIn(userId) = auth.state, let userId {
                 await services.liveRoutineDemo(ownerId: userId)
             }
+            // `-liveHabitDemo`: create a habit + log it via /habits/log (P3-4).
+            if AppConfig.isLiveHabitDemo, case let .signedIn(userId) = auth.state, let userId {
+                await services.liveHabitDemo(ownerId: userId)
+            }
             #endif
         }
         .onChange(of: selection) { _, newValue in

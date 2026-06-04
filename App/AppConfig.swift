@@ -135,6 +135,16 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: with `-liveSync -liveHabitDemo`, the app creates a habit via RoutineMutation and
+    /// logs it through `/habits/log` on launch (DevelopmentPlan P3-4). Always `false` in release.
+    static var isLiveHabitDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-liveHabitDemo")
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: with `-liveSync -liveRoutineDemo`, the app creates a daily 3-step routine and
     /// materializes today's instances on launch (DevelopmentPlan P3-3). Always `false` in release.
     static var isLiveRoutineDemo: Bool {
