@@ -226,6 +226,76 @@ actor APIClient: SyncTransport {
                                               authenticated: true, idempotent: false)
     }
 
+    // MARK: - Sharing & collaboration (Phase 5, ApiSpec §7.7, §8).
+
+    func shareList(_ listId: String) async throws -> ShareDTO {
+        struct R: Decodable { let share: ShareDTO }
+        let r: R = try await send(method: "POST", path: "lists/\(listId)/share", bodyData: nil, authenticated: true, idempotent: false)
+        return r.share
+    }
+
+    func createInvite(shareId: String, role: String) async throws -> InviteDTO {
+        struct Body: Encodable, Sendable { let role: String }
+        return try await send(method: "POST", path: "shares/\(shareId)/invites", body: Body(role: role), authenticated: true, idempotent: false)
+    }
+
+    @discardableResult
+    func acceptInvite(token: String) async throws -> ShareDTO {
+        struct R: Decodable { let share: ShareDTO }
+        let r: R = try await send(method: "POST", path: "invites/\(token)/accept", bodyData: nil, authenticated: true, idempotent: false)
+        return r.share
+    }
+
+    func shareMembers(shareId: String) async throws -> [ShareMemberDTO] {
+        struct R: Decodable { let members: [ShareMemberDTO] }
+        let r: R = try await send(method: "GET", path: "shares/\(shareId)/members", bodyData: nil, authenticated: true, idempotent: false)
+        return r.members
+    }
+
+    func setMemberRole(shareId: String, userId: String, role: String) async throws {
+        struct Body: Encodable, Sendable { let role: String }
+        struct R: Decodable { let ok: Bool }
+        let _: R = try await send(method: "PATCH", path: "shares/\(shareId)/members/\(userId)", body: Body(role: role), authenticated: true, idempotent: false)
+    }
+
+    /// Remove a member (owner) or leave the share (self). 204.
+    func removeMember(shareId: String, userId: String) async throws {
+        let _: EmptyResponse = try await send(method: "DELETE", path: "shares/\(shareId)/members/\(userId)", bodyData: nil, authenticated: true, idempotent: false)
+    }
+
+    /// Stop sharing the list entirely (owner only). 204.
+    func stopSharing(shareId: String) async throws {
+        let _: EmptyResponse = try await send(method: "DELETE", path: "shares/\(shareId)", bodyData: nil, authenticated: true, idempotent: false)
+    }
+
+    func taskComments(taskId: String) async throws -> [CommentDTO] {
+        struct R: Decodable { let comments: [CommentDTO] }
+        let r: R = try await send(method: "GET", path: "tasks/\(taskId)/comments", bodyData: nil, authenticated: true, idempotent: false)
+        return r.comments
+    }
+
+    @discardableResult
+    func postComment(taskId: String, body: String) async throws -> CommentDTO {
+        struct Body: Encodable, Sendable { let body: String }
+        struct R: Decodable { let comment: CommentDTO }
+        let r: R = try await send(method: "POST", path: "tasks/\(taskId)/comments", body: Body(body: body), authenticated: true, idempotent: false)
+        return r.comment
+    }
+
+    func wsTicket() async throws -> String {
+        struct R: Decodable { let ticket: String }
+        let r: R = try await send(method: "POST", path: "ws/ticket", bodyData: nil, authenticated: true, idempotent: false)
+        return r.ticket
+    }
+
+    /// The `wss://…/api/v1/ws?ticket=…` URL for the realtime socket.
+    func webSocketURL(ticket: String) -> URL? {
+        guard var comps = URLComponents(url: baseURL.appendingPathComponent("ws"), resolvingAgainstBaseURL: false) else { return nil }
+        comps.scheme = baseURL.scheme == "https" ? "wss" : "ws"
+        comps.queryItems = [URLQueryItem(name: "ticket", value: ticket)]
+        return comps.url
+    }
+
     // MARK: - Core request pipeline
 
     /// Encode `body` (if any) and delegate to the data-based sender. The typed entry point used by

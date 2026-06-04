@@ -113,6 +113,12 @@ struct TaskDetailView: View {
                     TextField("Notes", text: $notesDraft, axis: .vertical).lineLimit(3...8)
                 }
 
+                // Collaboration thread (P5-5). Server-connected builds only — it's a live thread shared
+                // with the list's members, so it has nothing to show in a pure-local build.
+                if AppConfig.isLiveSync {
+                    TaskCommentsSection(taskId: task.id)
+                }
+
                 Section {
                     Button {
                         services.focus.start(taskId: task.id, title: task.title)

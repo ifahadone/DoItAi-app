@@ -114,6 +114,9 @@ struct RootTabView: View {
             await services.requestNotificationAuthorizationIfNeeded()
             // Refresh the Pro entitlement from the server (the authority for feature gates, P6-4).
             await services.entitlements.refresh()
+            // Open the realtime socket (P5-5): a collaborator's `sync.bump` triggers an immediate pull.
+            // Self-guards demo launches; a dropped socket falls back to the foreground/interval pull.
+            if AppConfig.isLiveSync { await services.connectRealtime() }
             // Mirror scheduled blocks to Apple Calendar when the user enabled it in Settings (P3-7).
             if UserDefaults.standard.bool(forKey: "calendarWriteBackEnabled") && !AppConfig.isRunningDemo {
                 _ = await services.exportToCalendar()

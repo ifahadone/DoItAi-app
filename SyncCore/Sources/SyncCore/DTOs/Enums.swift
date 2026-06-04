@@ -55,6 +55,7 @@ public enum SyncEntityType: RawRepresentable, Codable, Sendable, Equatable {
     case checklist
     case alarm
     case event
+    case comment
     case unknown(String)
 
     public init(rawValue: String) {
@@ -67,6 +68,7 @@ public enum SyncEntityType: RawRepresentable, Codable, Sendable, Equatable {
         case "checklist": self = .checklist
         case "alarm": self = .alarm
         case "event": self = .event
+        case "comment": self = .comment
         default: self = .unknown(rawValue)
         }
     }
@@ -81,6 +83,7 @@ public enum SyncEntityType: RawRepresentable, Codable, Sendable, Equatable {
         case .checklist: return "checklist"
         case .alarm: return "alarm"
         case .event: return "event"
+        case .comment: return "comment"
         case .unknown(let value): return value
         }
     }

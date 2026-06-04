@@ -18,6 +18,8 @@ struct ListDetailView: View {
     @State private var selectedTask: TaskModel?
     @State private var isCreating = false
     @State private var newTitle = ""
+    @State private var showSharing = false
+    @State private var showPaywall = false
 
     private var tasksInList: [TaskModel] { allTasks.filter { $0.listId == list.id } }
 
@@ -51,6 +53,13 @@ struct ListDetailView: View {
                 Button { newTitle = ""; isCreating = true } label: { Image(systemName: "plus") }
                     .accessibilityLabel("Add task to list")
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    // Sharing is a Pro feature (AppSpec §17); non-Pro taps land on the paywall.
+                    if services.entitlements.isPro { showSharing = true } else { showPaywall = true }
+                } label: { Image(systemName: "person.crop.circle.badge.plus") }
+                    .accessibilityLabel("Share list")
+            }
         }
         .alert("New Task", isPresented: $isCreating) {
             TextField("Title", text: $newTitle)
@@ -61,6 +70,12 @@ struct ListDetailView: View {
         }
         .sheet(item: $selectedTask) { task in
             TaskDetailView(task: task).environment(auth).environment(services)
+        }
+        .sheet(isPresented: $showSharing) {
+            SharingView(list: list).environment(services)
+        }
+        .sheet(isPresented: $showPaywall) {
+            PaywallView().environment(services)
         }
     }
 

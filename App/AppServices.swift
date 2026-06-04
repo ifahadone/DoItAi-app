@@ -65,6 +65,21 @@ final class AppServices {
         }
     }
 
+    /// The realtime socket (P5-5): on a `sync.bump` it pulls. Lazily created, suppressed in demos.
+    private var realtime: RealtimeClient?
+
+    func connectRealtime() async {
+        guard !AppConfig.isRunningDemo else { return }
+        if realtime == nil {
+            realtime = RealtimeClient(apiClient: apiClient, onBump: { [weak self] in await self?.syncOnce() })
+        }
+        await realtime?.connect()
+    }
+
+    func disconnectRealtime() {
+        realtime?.disconnect()
+    }
+
     /// Materialize a parsed quick-add (P1-H) into a task: resolve/create its tags by name, create the
     /// task, then apply the parsed priority/due/tags via the standard mutation paths. Returns the id.
     @discardableResult
