@@ -35,6 +35,8 @@ public enum DialStyle: String, CaseIterable, Identifiable, Sendable {
 /// Renders the day-dial in the chosen ``DialStyle``. All styles share the pure ``SectographLayout``
 /// geometry; only the drawing differs. Drop-in for the Today hero and the gallery.
 public struct SectographDial: View {
+    @Environment(\.theme) private var theme
+
     private let items: [SectographItem]
     private let busy: [SectographItem]
     private let labels: [String: String]
@@ -42,10 +44,11 @@ public struct SectographDial: View {
     private let style: DialStyle
     private let ringWidth: CGFloat
     private let showNowHand: Bool
+    private let backed: Bool
 
     public init(items: [SectographItem], busy: [SectographItem] = [], labels: [String: String] = [:],
                 titles: [String: String] = [:], style: DialStyle = .aurora,
-                ringWidth: CGFloat = 24, showNowHand: Bool = true) {
+                ringWidth: CGFloat = 24, showNowHand: Bool = true, backed: Bool = true) {
         self.items = items
         self.busy = busy
         self.labels = labels
@@ -53,9 +56,28 @@ public struct SectographDial: View {
         self.style = style
         self.ringWidth = ringWidth
         self.showNowHand = showNowHand
+        self.backed = backed
     }
 
     public var body: some View {
+        if backed {
+            ZStack {
+                // A subtle raised "face" so the dial reads as a defined object on any background
+                // (the faint clock face / track otherwise washes out on a plain page).
+                Circle()
+                    .fill(theme.colors.background)
+                    .overlay(Circle().strokeBorder(theme.colors.separator.opacity(0.6), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.12), radius: 12, y: 3)
+                styleContent.padding(12)
+            }
+            .aspectRatio(1, contentMode: .fit) // keep the backing a circle, not an ellipse
+        } else {
+            styleContent
+        }
+    }
+
+    @ViewBuilder
+    private var styleContent: some View {
         switch style {
         case .halo:
             HaloDial(items: items, titles: titles)
