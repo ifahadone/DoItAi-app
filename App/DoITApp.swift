@@ -64,6 +64,7 @@ struct RootTabView: View {
     @Environment(AuthService.self) private var auth
     @State private var selection: Tab
     @State private var showQuickAdd = false
+    @State private var showFocusDemo = false
 
     enum Tab: Hashable { case today, plan, add, lists, insights }
 
@@ -129,6 +130,11 @@ struct RootTabView: View {
             if AppConfig.isLiveReminderDemo, case let .signedIn(userId) = auth.state, let userId {
                 await services.liveReminderDemo(ownerId: userId)
             }
+            // `-liveFocusDemo`: log actualMinutes + start a live focus session, then show the timer (P2-4).
+            if AppConfig.isLiveFocusDemo, case let .signedIn(userId) = auth.state, let userId {
+                await services.liveFocusDemo(ownerId: userId)
+                showFocusDemo = true
+            }
             #endif
         }
         .onChange(of: selection) { _, newValue in
@@ -141,6 +147,9 @@ struct RootTabView: View {
             QuickAddView()
                 .environment(auth)
                 .environment(services)
+        }
+        .sheet(isPresented: $showFocusDemo) {
+            FocusTimerView().environment(services)
         }
     }
 }

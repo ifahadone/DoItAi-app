@@ -18,6 +18,8 @@ final class AppServices {
     let syncEngine: DefaultSyncEngine
     let apiClient: APIClient
     let auth: AuthService
+    /// The running focus-timer session (P2-4).
+    let focus: FocusController
 
     private let container: ModelContainer
 
@@ -29,6 +31,7 @@ final class AppServices {
         let idGenerator = UUIDGenerator()
         self.clock = clock
         self.idGenerator = idGenerator
+        self.focus = FocusController(clock: clock)
 
         // The engine writes pulled changes into SwiftData through this store.
         let store = SwiftDataSyncStore(container: container)
@@ -201,6 +204,31 @@ final class AppServices {
         print("QUICKADD demo: parsed title=\(parsed.title) due=\(parsed.dueAt != nil) tags=\(parsed.tagNames) prio=\(parsed.priority)")
         await composeQuickAdd(parsed, ownerId: ownerId)
         await syncOnce()
+    }
+
+    /// DEBUG (`-liveFocusDemo`): log 25 focus-minutes on one task via the real FocusSession→
+    /// actualMinutes path (verifies P2-4 logging), then start a live focus session on another so the
+    /// running timer can be shown.
+    func liveFocusDemo(ownerId: String) async {
+        let ctx = container.mainContext
+        let creator = TaskCreation(context: ctx, engine: syncEngine, ownerId: ownerId, clock: clock, idGenerator: idGenerator)
+
+        let loggedId = await creator.createTask(title: "Logged 25m focus ✅")
+        await syncOnce()
+        var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == loggedId })
+        descriptor.fetchLimit = 1
+        if let task = try? ctx.fetch(descriptor).first {
+            let session = FocusSession(taskId: loggedId, taskTitle: task.title, accumulatedSeconds: 25 * 60)
+            let minutes = session.loggedMinutes(at: clock.now().timeIntervalSince1970)
+            await TaskMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator)
+                .addActualMinutes(task, minutes)
+            await syncOnce()
+            print("FOCUS demo: logged \(minutes)m actualMinutes on \(loggedId)")
+        }
+
+        let runId = await creator.createTask(title: "Focusing now…")
+        await syncOnce()
+        focus.start(taskId: runId, title: "Focusing now…")
     }
 
     /// DEBUG (`-liveReminderDemo`): insert a task + 70 future reminders locally, then schedule them —

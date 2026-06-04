@@ -51,6 +51,13 @@ struct TaskMutation {
         await patch(task, fields: ["dueAt": dueAt.map { AnyCodable.string(Self.iso($0)) } ?? .null]) { $0.dueAt = dueAt }
     }
 
+    /// Add focus-timer minutes to the task's logged `actualMinutes` (P2-4).
+    func addActualMinutes(_ task: TaskModel, _ minutes: Int) async {
+        guard minutes > 0 else { return }
+        let total = (task.actualMinutes ?? 0) + minutes
+        await patch(task, fields: ["actualMinutes": .int(total)]) { $0.actualMinutes = total }
+    }
+
     /// Place/move/resize a task's time block on the planner + dial (P2).
     func setSchedule(_ task: TaskModel, start: Date?, end: Date?) async {
         guard start != task.scheduledStart || end != task.scheduledEnd else { return }

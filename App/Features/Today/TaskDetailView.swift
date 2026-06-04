@@ -22,6 +22,7 @@ struct TaskDetailView: View {
     @State private var notesDraft = ""
     @State private var hasDueDate = false
     @State private var dueDraft = Date()
+    @State private var showingFocus = false
 
     private var mutation: TaskMutation {
         TaskMutation(context: modelContext, engine: services.syncEngine,
@@ -92,12 +93,24 @@ struct TaskDetailView: View {
                 }
 
                 Section {
+                    Button {
+                        services.focus.start(taskId: task.id, title: task.title)
+                        showingFocus = true
+                    } label: {
+                        Label("Start Focus", systemImage: "timer")
+                    }
+                }
+
+                Section {
                     Button(role: .destructive) {
                         Task { await mutate { await mutation.delete(task) }; dismiss() }
                     } label: {
                         Label("Delete Task", systemImage: "trash")
                     }
                 }
+            }
+            .sheet(isPresented: $showingFocus) {
+                FocusTimerView().environment(services)
             }
             .navigationTitle("Task")
             .navigationBarTitleDisplayMode(.inline)

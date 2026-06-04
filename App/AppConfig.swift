@@ -114,6 +114,17 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: with `-liveSync -liveFocusDemo`, the app logs 25 focus-minutes on one task (via the
+    /// real FocusSession→actualMinutes path) and starts a live focus session for another, presenting
+    /// the running timer (DevelopmentPlan P2-4). Always `false` in release.
+    static var isLiveFocusDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-liveFocusDemo")
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: with `-liveSync -liveReminderDemo`, the app inserts a task + 70 reminders and runs
     /// the 64-cap scheduler on launch (DevelopmentPlan P1-I). Always `false` in release.
     static var isLiveReminderDemo: Bool {
