@@ -147,6 +147,10 @@ final class AppServices {
         return "local-user"
     }
 
+    /// The current owner id, for UI-driven mutations that stamp a local row (the server re-derives the
+    /// authoritative owner from the auth token on push).
+    var currentOwnerId: String { ownerId }
+
     /// Materialize today's routines into scheduled Task instances (P3-3). Idempotent; safe on launch.
     @discardableResult
     func materializeRoutines() async -> Int {
@@ -216,12 +220,19 @@ final class AppServices {
         return await service.writeBack(blocks: blocks, ownerId: ownerId)
     }
 
-    /// Ask once for notification authorization (reminders + alarm chains share the notification center,
-    /// P1-I/P3-6). Call at launch after sign-in; suppressed during headless demos so the system prompt
-    /// can't block them. Idempotent — iOS returns the existing status without re-prompting.
+    /// Ask for notification authorization (reminders + alarm chains share the notification center,
+    /// P1-I/P3-6). Idempotent — iOS returns the existing status without re-prompting. User-initiated
+    /// (e.g. a Settings button), so it always asks.
+    @discardableResult
+    func requestNotificationAuthorization() async -> Bool {
+        await NotificationScheduler().requestAuthorization()
+    }
+
+    /// Launch-time variant: ask once after sign-in, but suppressed during headless demos so the system
+    /// prompt can't block them.
     func requestNotificationAuthorizationIfNeeded() async {
         guard !AppConfig.isRunningDemo else { return }
-        _ = await NotificationScheduler().requestAuthorization()
+        await requestNotificationAuthorization()
     }
 
     #if DEBUG

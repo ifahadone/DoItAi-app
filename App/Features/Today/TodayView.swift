@@ -36,6 +36,7 @@ struct TodayView: View {
     @State private var newTitle = ""
     /// The task whose detail sheet is open (P1-E).
     @State private var selectedTask: TaskModel?
+    @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
@@ -58,6 +59,10 @@ struct TodayView: View {
             }
             .navigationTitle("Today")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                        .accessibilityLabel("Settings")
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         newTitle = ""
@@ -79,6 +84,14 @@ struct TodayView: View {
                 TaskDetailView(task: task)
                     .environment(auth)
                     .environment(services)
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView().environment(services)
+            }
+            .onAppear {
+                #if DEBUG
+                if AppConfig.showSettingsOnLaunch { showSettings = true }
+                #endif
             }
         }
     }

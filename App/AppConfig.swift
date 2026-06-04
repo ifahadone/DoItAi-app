@@ -195,13 +195,23 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: `-startSettings` presents the Settings sheet on launch (so it can be screenshot
+    /// without UI navigation). Always `false` in release.
+    static var showSettingsOnLaunch: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-startSettings")
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: true when ANY headless demo arg is present (`-live…Demo`, `-uiDemo`, `-calendarDemo`).
     /// Used to suppress permission prompts (notifications/location/calendar) during automated launches —
     /// a system prompt would block the headless run with no one to tap "Allow". Always `false` in release.
     static var isRunningDemo: Bool {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
-        return args.contains("-uiDemo") || args.contains("-calendarDemo")
+        return args.contains("-uiDemo") || args.contains("-calendarDemo") || args.contains("-startSettings")
             || args.contains { $0.hasPrefix("-live") && $0.hasSuffix("Demo") }
         #else
         return false

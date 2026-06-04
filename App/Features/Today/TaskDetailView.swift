@@ -24,9 +24,19 @@ struct TaskDetailView: View {
     @State private var dueDraft = Date()
     @State private var showingFocus = false
 
+    @State private var reminders: [ReminderModel] = []
+    @State private var showLocationReminder = false
+    @State private var showTimeReminder = false
+    @State private var timeDraft = Date().addingTimeInterval(3600)
+
     private var mutation: TaskMutation {
         TaskMutation(context: modelContext, engine: services.syncEngine,
                      clock: services.clock, idGenerator: services.idGenerator)
+    }
+
+    private var reminderMutation: ReminderMutation {
+        ReminderMutation(context: modelContext, engine: services.syncEngine, clock: services.clock,
+                         idGenerator: services.idGenerator, ownerId: services.currentOwnerId)
     }
 
     var body: some View {
@@ -57,6 +67,17 @@ struct TaskDetailView: View {
                     Toggle("Has due date", isOn: $hasDueDate)
                     if hasDueDate {
                         DatePicker("Due", selection: $dueDraft)
+                    }
+                }
+
+                Section("Reminders") {
+                    ForEach(reminders) { reminder in reminderRow(reminder) }
+                        .onDelete { offsets in Task { await deleteReminders(at: offsets) } }
+                    Menu {
+                        Button { showTimeReminder = true } label: { Label("At a time…", systemImage: "clock") }
+                        Button { showLocationReminder = true } label: { Label("At a place…", systemImage: "mappin.and.ellipse") }
+                    } label: {
+                        Label("Add Reminder", systemImage: "plus")
                     }
                 }
 
@@ -112,6 +133,25 @@ struct TaskDetailView: View {
             .sheet(isPresented: $showingFocus) {
                 FocusTimerView().environment(services)
             }
+            .sheet(isPresented: $showLocationReminder) {
+                LocationReminderEditor { region in Task { await addLocationReminder(region) } }
+            }
+            .sheet(isPresented: $showTimeReminder) {
+                NavigationStack {
+                    Form { DatePicker("Remind me at", selection: $timeDraft) }
+                        .navigationTitle("Time Reminder")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Add") { showTimeReminder = false; Task { await addTimeReminder() } }
+                            }
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Cancel") { showTimeReminder = false }
+                            }
+                        }
+                }
+                .presentationDetents([.medium])
+            }
             .navigationTitle("Task")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -127,8 +167,65 @@ struct TaskDetailView: View {
                 notesDraft = task.notes ?? ""
                 hasDueDate = task.dueAt != nil
                 dueDraft = task.dueAt ?? Date()
+                loadReminders()
             }
         }
+    }
+
+    /// One reminder row — a place (kind 2) or a time (kind 0/1).
+    @ViewBuilder
+    private func reminderRow(_ reminder: ReminderModel) -> some View {
+        if reminder.kind == 2, let region = reminder.region {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(region.center.name ?? "Location")
+                    Text("\(Int(region.radius)) m · \(triggerText(region))")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } icon: { Image(systemName: "mappin.and.ellipse") }
+        } else if let fireAt = reminder.fireAt {
+            Label(fireAt.formatted(date: .abbreviated, time: .shortened), systemImage: "clock")
+        } else {
+            Label("Reminder", systemImage: "bell")
+        }
+    }
+
+    private func triggerText(_ region: ReminderRegion) -> String {
+        switch (region.onEntry, region.onExit) {
+        case (true, true): return "arrive & leave"
+        case (true, false): return "on arrive"
+        case (false, true): return "on leave"
+        case (false, false): return "—"
+        }
+    }
+
+    private func loadReminders() {
+        let taskId = task.id
+        reminders = (try? modelContext.fetch(FetchDescriptor<ReminderModel>(
+            predicate: #Predicate { $0.taskId == taskId && $0.deletedAt == nil },
+            sortBy: [SortDescriptor(\.createdAt)]))) ?? []
+    }
+
+    private func addTimeReminder() async {
+        await reminderMutation.createAbsolute(taskId: task.id, fireAt: timeDraft)
+        _ = await services.scheduleReminders() // re-arm the 64-cap notification window (P1-I)
+        await syncIfLive()
+        loadReminders()
+    }
+
+    private func addLocationReminder(_ region: ReminderRegion) async {
+        await reminderMutation.createLocation(taskId: task.id, region: region)
+        _ = services.rearmLocationReminders() // re-arm geofence monitoring (P3-7)
+        await syncIfLive()
+        loadReminders()
+    }
+
+    private func deleteReminders(at offsets: IndexSet) async {
+        for index in offsets where reminders.indices.contains(index) {
+            await reminderMutation.delete(reminders[index])
+        }
+        await syncIfLive()
+        loadReminders()
     }
 
     /// Commit the free-text + schedule edits (each is a no-op if unchanged), then sync once.
