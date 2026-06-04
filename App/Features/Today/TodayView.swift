@@ -37,6 +37,7 @@ struct TodayView: View {
     /// The task whose detail sheet is open (P1-E).
     @State private var selectedTask: TaskModel?
     @State private var showSettings = false
+    @State private var showAssistant = false
     @State private var searchText = ""
     /// AI search result (P4-7): the structured filter applied locally. Nil ⇒ plain text contains.
     @State private var aiFilter: AISearchFilter?
@@ -66,6 +67,10 @@ struct TodayView: View {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                         .accessibilityLabel("Settings")
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showAssistant = true } label: { Image(systemName: "sparkles") }
+                        .accessibilityLabel("AI assistant")
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         newTitle = ""
@@ -91,6 +96,9 @@ struct TodayView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView().environment(services)
             }
+            .sheet(isPresented: $showAssistant) {
+                AIAssistantView().environment(services)
+            }
             .searchable(text: $searchText, prompt: services.aiConsentEnabled ? "Search or ask…" : "Search")
             .onChange(of: searchText) { _, _ in aiFilter = nil } // editing invalidates the AI filter
             .onSubmit(of: .search) {
@@ -99,6 +107,10 @@ struct TodayView: View {
             .onAppear {
                 #if DEBUG
                 if AppConfig.showSettingsOnLaunch { showSettings = true }
+                if AppConfig.showAssistantOnLaunch {
+                    UserDefaults.standard.set(true, forKey: "aiConsentEnabled")
+                    showAssistant = true
+                }
                 #endif
             }
         }
