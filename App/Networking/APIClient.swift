@@ -207,6 +207,25 @@ actor APIClient: SyncTransport {
                               body: Body(signedTransaction: signedTransaction), authenticated: true, idempotent: false)
     }
 
+    // MARK: - Account (Phase 6, ApiSpec §11). Data portability + deletion.
+
+    /// Fetch the full data-export bundle as raw JSON bytes (for a share sheet / file).
+    func exportAccountData() async throws -> Data {
+        let request = try await makeRequest(method: "POST", path: "account/export", queryItems: [],
+                                            bodyData: nil, authenticated: true, idempotent: false)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw APIError.invalidResponse
+        }
+        return data
+    }
+
+    /// Permanently delete the account + all its data (204).
+    func deleteAccount() async throws {
+        let _: EmptyResponse = try await send(method: "DELETE", path: "account", bodyData: nil,
+                                              authenticated: true, idempotent: false)
+    }
+
     // MARK: - Core request pipeline
 
     /// Encode `body` (if any) and delegate to the data-based sender. The typed entry point used by

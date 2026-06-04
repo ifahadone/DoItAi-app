@@ -15,6 +15,9 @@ struct SettingsView: View {
     @State private var exporting = false
     @State private var lastExport: String?
     @State private var showPaywall = false
+    @State private var preparingExport = false
+    @State private var exportURL: URL?
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         NavigationStack {
@@ -76,9 +79,37 @@ struct SettingsView: View {
                 } footer: {
                     Text("Reminders and routine alarm chains deliver as notifications. Time-Sensitive alerts break through Focus when you allow them; a louder Critical alert needs a special Apple entitlement.")
                 }
+
+                Section {
+                    if let exportURL {
+                        ShareLink("Share your data export", item: exportURL)
+                    } else {
+                        Button {
+                            Task { preparingExport = true; exportURL = await prepareExport(); preparingExport = false }
+                        } label: {
+                            HStack {
+                                Label("Export my data", systemImage: "square.and.arrow.up")
+                                Spacer()
+                                if preparingExport { ProgressView() }
+                            }
+                        }
+                        .disabled(preparingExport)
+                    }
+                    Button(role: .destructive) { showDeleteConfirm = true } label: {
+                        Label("Delete account", systemImage: "trash")
+                    }
+                } header: {
+                    Text("Account")
+                } footer: {
+                    Text("Export downloads all your data as JSON. Deleting your account permanently erases everything on the server and cannot be undone.")
+                }
             }
             .sheet(isPresented: $showPaywall) {
                 PaywallView().environment(services)
+            }
+            .confirmationDialog("Permanently delete your account and all data?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("Delete everything", role: .destructive) { Task { await deleteAccount() } }
+                Button("Cancel", role: .cancel) {}
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -95,5 +126,20 @@ struct SettingsView: View {
         let result = await services.exportToCalendar()
         exporting = false
         lastExport = "Exported — \(result.created) created, \(result.updated) updated, \(result.deleted) removed."
+    }
+
+    /// Fetch the account export JSON and write it to a temp file for the share sheet (P6-5).
+    private func prepareExport() async -> URL? {
+        guard let data = try? await services.apiClient.exportAccountData() else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("doit-export.json")
+        try? data.write(to: url, options: .atomic)
+        return url
+    }
+
+    /// Permanently delete the account, then sign out (the account no longer exists).
+    private func deleteAccount() async {
+        try? await services.apiClient.deleteAccount()
+        services.auth.signOut()
+        dismiss()
     }
 }
