@@ -1,4 +1,5 @@
 import SwiftUI
+import DesignSystem
 
 /// App settings (P3-7 wiring). Currently: calendar write-back (mirror DoIT's scheduled blocks into
 /// Apple Calendar) + a notification-permission entry point. The toggle is read on launch to run the
@@ -11,6 +12,8 @@ struct SettingsView: View {
     @AppStorage("calendarWriteBackEnabled") private var calendarWriteBack = false
     /// AI opt-in (ApiSpec §9.6). Mirrors `users.ai_consent` on the server; the AI features no-op when off.
     @AppStorage("aiConsentEnabled") private var aiConsent = false
+    /// The Today sectograph style (P5-5). Read by ``TodayView`` via the same key.
+    @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.aurora.rawValue
 
     @State private var exporting = false
     @State private var lastExport: String?
@@ -38,6 +41,18 @@ struct SettingsView: View {
                     Text(services.entitlements.isPro
                          ? "Thanks for supporting DoIT. All Pro features are unlocked."
                          : "Unlock the sectograph, AI, calendar write-back, analytics, unlimited routines, and sharing.")
+                }
+
+                Section {
+                    Picker("Style", selection: $dialStyleRaw) {
+                        ForEach(DialStyle.allCases) { style in
+                            Text(style.title).tag(style.rawValue)
+                        }
+                    }
+                } header: {
+                    Text("Day dial")
+                } footer: {
+                    Text("How the sectograph renders today's blocks on the Today screen.")
                 }
 
                 Section {

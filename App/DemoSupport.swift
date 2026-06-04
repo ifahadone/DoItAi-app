@@ -19,32 +19,67 @@ enum DemoData {
 
         let now = Date()
         let owner = "demo-user"
+        let cal = Calendar.current
+        func at(_ hour: Int, _ minute: Int = 0) -> Date {
+            cal.date(bySettingHour: hour, minute: minute, second: 0, of: now) ?? now
+        }
 
-        // (title, priority, status, pendingSync) — one left "pending" to show the offline badge.
-        let samples: [(String, Priority, TaskStatus, Bool)] = [
-            ("Draft the DoIT API contract",            .p1,           .inProgress, true),
-            ("Plan the week in the sectograph",        .p2,           .scheduled,  false),
-            ("Morning routine — meditate, gym, read",  .p3,           .inbox,      false),
-            ("Buy groceries for the week",             Priority.none, .inbox,      false),
-            ("Review pull requests",                   .p2,           .done,       false),
+        // Lists give the dial's arcs their colors + SF Symbols.
+        let listSpecs: [(name: String, colorHex: String, icon: String)] = [
+            ("Work", "#2E7DF6", "briefcase.fill"),
+            ("Health", "#34C759", "heart.fill"),
+            ("Personal", "#FF9F0A", "house.fill"),
         ]
+        var listId: [String: String] = [:]
+        for (index, spec) in listSpecs.enumerated() {
+            let id = UUID().uuidString
+            listId[spec.name] = id
+            context.insert(TaskListModel(
+                id: id, ownerId: owner, name: spec.name, colorHex: spec.colorHex, icon: spec.icon,
+                sortIndex: index, createdAt: now, updatedAt: now, serverVersion: 1,
+                syncStateRaw: LocalSyncState.synced.rawValue))
+        }
 
-        for (index, sample) in samples.enumerated() {
-            let (title, priority, status, pending) = sample
+        func makeTask(_ title: String, _ priority: Priority, _ status: TaskStatus,
+                      list: String?, rank: Int, pending: Bool = false) -> TaskModel {
             let task = TaskModel(
-                id: UUID().uuidString,
-                ownerId: owner,
-                title: title,
-                statusRaw: status.rawValue,
-                priorityRaw: priority.rawValue,
-                rank: index,
-                createdAt: now.addingTimeInterval(Double(-index) * 600),
-                updatedAt: now,
+                id: UUID().uuidString, ownerId: owner, title: title,
+                statusRaw: status.rawValue, priorityRaw: priority.rawValue, rank: rank,
+                createdAt: now.addingTimeInterval(Double(-rank) * 600), updatedAt: now,
                 serverVersion: pending ? 0 : 1,
-                syncStateRaw: (pending ? LocalSyncState.pendingCreate : .synced).rawValue
-            )
+                syncStateRaw: (pending ? LocalSyncState.pendingCreate : .synced).rawValue)
+            task.listId = list.flatMap { listId[$0] }
+            return task
+        }
+
+        // A block spanning "now" → the emphasised (brighter/thicker, glowing) current arc.
+        let nowBlock = makeTask("Focus: API design", .p1, .inProgress, list: "Work", rank: 0)
+        nowBlock.scheduledStart = now.addingTimeInterval(-45 * 60)
+        nowBlock.scheduledEnd = now.addingTimeInterval(45 * 60)
+        context.insert(nowBlock)
+
+        // Scheduled blocks → gradient arcs around the dial (one done → dimmed).
+        let blocks: [(String, Priority, TaskStatus, String, Date, Date)] = [
+            ("Deep work — API contract", .p2, .scheduled, "Work",   at(9, 0),  at(11, 0)),
+            ("Morning run",              .p3, .done,      "Health", at(6, 30), at(7, 15)),
+            ("Team sync",                .p2, .scheduled, "Work",   at(13, 0), at(13, 45)),
+            ("Gym session",              .p3, .scheduled, "Health", at(18, 0), at(19, 0)),
+        ]
+        for (offset, b) in blocks.enumerated() {
+            let task = makeTask(b.0, b.1, b.2, list: b.3, rank: offset + 1)
+            task.scheduledStart = b.4
+            task.scheduledEnd = b.5
             context.insert(task)
         }
+
+        // Due-only task → a dashed instant marker + the list icon chip.
+        let due = makeTask("Call the dentist", .p2, .scheduled, list: "Personal", rank: 5)
+        due.dueAt = at(16, 0)
+        context.insert(due)
+
+        // One unscheduled, pending task to show the offline badge in the list.
+        context.insert(makeTask("Buy groceries for the week", Priority.none, .inbox,
+                                 list: "Personal", rank: 6, pending: true))
 
         try? context.save()
     }

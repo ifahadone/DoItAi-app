@@ -47,7 +47,10 @@ struct SectographWidgetView: View {
     }
 
     var body: some View {
-        SectographView(items: items, ringWidth: 16, showNowHand: true)
+        // The small widget is too dense for the center hub + twilight backdrop; degrade to the clean
+        // ring + now-hand (titles also absent — the snapshot carries no colors/titles here).
+        SectographView(items: items, ringWidth: 16, showNowHand: true,
+                       showCenterHub: false, showDayNightBackdrop: false)
             .padding(6)
             .containerBackground(.fill.tertiary, for: .widget)
     }

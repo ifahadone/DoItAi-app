@@ -45,6 +45,18 @@ private struct RootView: View {
     @Environment(AuthService.self) private var auth
 
     var body: some View {
+        #if DEBUG
+        if AppConfig.isSectographGallery {
+            SectographGallery()
+        } else {
+            shell
+        }
+        #else
+        shell
+        #endif
+    }
+
+    @ViewBuilder private var shell: some View {
         switch auth.state {
         case .unknown:
             ProgressView("Loading…")

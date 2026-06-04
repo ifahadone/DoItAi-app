@@ -32,6 +32,10 @@ struct TodayView: View {
     @Query(filter: #Predicate<TagModel> { $0.deletedAt == nil })
     private var allTags: [TagModel]
 
+    /// The user's chosen day-dial style (P5-5 sectograph variants), persisted across launches.
+    @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.aurora.rawValue
+    private var dialStyle: DialStyle { DialStyle(rawValue: dialStyleRaw) ?? .aurora }
+
     @State private var isCreating = false
     @State private var newTitle = ""
     /// The task whose detail sheet is open (P1-E).
@@ -52,7 +56,8 @@ struct TodayView: View {
                         let dialItems = sectographItems
                         let busy = busyItems
                         if !dialItems.isEmpty || !busy.isEmpty {
-                            SectographView(items: dialItems, busy: busy, labels: dialLabels)
+                            SectographDial(items: dialItems, busy: busy, labels: dialLabels,
+                                            titles: dialTitles, style: dialStyle)
                                 .frame(height: 240)
                                 .padding(.top, theme.spacing.sm)
                                 .padding(.horizontal, theme.spacing.xl)
@@ -219,12 +224,18 @@ struct TodayView: View {
             return (c.hour ?? 0) * 60 + (c.minute ?? 0)
         }
         return tasks.compactMap { task in
-            let color = list(for: task)?.colorHex
+            let taskList = list(for: task)
+            let color = taskList?.colorHex
+            let icon = taskList?.icon
+            let done = task.status == .done
             if let start = task.scheduledStart, let startMinute = minute(start) {
                 let endMinute = task.scheduledEnd.flatMap(minute) ?? min(1440, startMinute + 60)
-                return SectographItem(id: task.id, startMinute: startMinute, endMinute: endMinute, colorHex: color)
+                return SectographItem(id: task.id, startMinute: startMinute, endMinute: endMinute,
+                                      colorHex: color, kind: .span, symbolName: icon, isDone: done)
             } else if let due = task.dueAt, let dueMinute = minute(due) {
-                return SectographItem(id: task.id, startMinute: dueMinute, endMinute: min(1440, dueMinute + 20), colorHex: color)
+                // Due-only tasks read as instant markers (a dashed spoke + the list icon), not fat arcs.
+                return SectographItem(id: task.id, startMinute: dueMinute, endMinute: min(1440, dueMinute + 20),
+                                      colorHex: color, kind: .instant, symbolName: icon, isDone: done)
             }
             return nil
         }
@@ -242,6 +253,15 @@ struct TodayView: View {
             if let task = tasks.first(where: { $0.id == item.id }) {
                 result[item.id] = "\(task.title), at \(timeString(item.startMinute))"
             }
+        }
+        return result
+    }
+
+    /// On-arc display titles for the dial blocks (P5-5 aurora) — keyed by item id, like `dialLabels`.
+    private var dialTitles: [String: String] {
+        var result: [String: String] = [:]
+        for item in sectographItems {
+            if let task = tasks.first(where: { $0.id == item.id }) { result[item.id] = task.title }
         }
         return result
     }

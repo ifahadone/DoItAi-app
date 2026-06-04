@@ -50,6 +50,16 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: show the sectograph concept gallery (`-sectographGallery`) instead of the app shell,
+    /// to compare visual variants of the day-dial. Always `false` in release builds.
+    static var isSectographGallery: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-sectographGallery")
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: when launched with `-liveSync`, the app dev-signs-in against the local stub-enabled
     /// API (`apiBaseURL` → localhost) and runs the real offline-sync loop. Always `false` in release.
     static var isLiveSync: Bool {

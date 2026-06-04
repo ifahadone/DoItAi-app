@@ -73,4 +73,56 @@ final class SectographLayoutTests: XCTestCase {
         XCTAssertEqual(arcs[0].outerRadius, 100, accuracy: 1e-9)
         XCTAssertEqual(arcs[0].colorHex, "#FF0000")
     }
+
+    // MARK: - Aurora label-placement geometry (P5-5)
+
+    func testMidAngleSimple() {
+        let item = SectographItem(id: "am", startMinute: 540, endMinute: 660) // 9–11am, mid = 600
+        XCTAssertEqual(layout.midAngle(for: item), layout.angle(forMinute: 600), accuracy: 1e-9)
+    }
+
+    func testMidAngleWrapsMidnight() {
+        let night = SectographItem(id: "n", startMinute: 1380, endMinute: 60) // 11pm–1am, mid = midnight
+        XCTAssertEqual(layout.midAngle(for: night), -halfPi, accuracy: 1e-9) // top of the dial
+    }
+
+    func testShouldLabelThreshold() {
+        // 15-min arc (~5.9pt centerline) can't carry a 20-char title.
+        let tiny = SectographItem(id: "t", startMinute: 600, endMinute: 615)
+        XCTAssertFalse(layout.shouldLabel(tiny, charCount: 20))
+        // 3-hour arc (~70pt) easily carries a normal title.
+        let big = SectographItem(id: "b", startMinute: 600, endMinute: 780)
+        XCTAssertTrue(layout.shouldLabel(big, charCount: 10))
+        // Instant items are never labelled (they get a marker chip instead).
+        let instant = SectographItem(id: "i", startMinute: 600, endMinute: 780, kind: .instant)
+        XCTAssertFalse(layout.shouldLabel(instant, charCount: 10))
+        // Empty title → no label.
+        XCTAssertFalse(layout.shouldLabel(big, charCount: 0))
+    }
+
+    func testTextNeedsFlip() {
+        XCTAssertTrue(layout.textNeedsFlip(at: layout.angle(forMinute: 1080)))  // 6pm, left half
+        XCTAssertFalse(layout.textNeedsFlip(at: layout.angle(forMinute: 360)))  // 6am, right half
+    }
+
+    func testContainsMinuteWrap() {
+        let night = SectographItem(id: "n", startMinute: 1380, endMinute: 60) // 11pm–1am
+        XCTAssertTrue(layout.contains(minute: 1410, night))  // 11:30pm
+        XCTAssertTrue(layout.contains(minute: 30, night))    // 12:30am
+        XCTAssertFalse(layout.contains(minute: 120, night))  // 2am
+        let day = SectographItem(id: "d", startMinute: 600, endMinute: 660)
+        XCTAssertTrue(layout.contains(minute: 630, day))
+        XCTAssertFalse(layout.contains(minute: 700, day))
+    }
+
+    func testNewFieldDefaults() {
+        let span = SectographItem(id: "s", startMinute: 600, endMinute: 660)
+        XCTAssertEqual(span.kind, .span)
+        XCTAssertFalse(span.isInstant)
+        XCTAssertNil(span.symbolName)
+        XCTAssertFalse(span.isDone)
+        // Explicit instant, and a zero-duration span, both read as instant.
+        XCTAssertTrue(SectographItem(id: "i", startMinute: 600, endMinute: 780, kind: .instant).isInstant)
+        XCTAssertTrue(SectographItem(id: "z", startMinute: 600, endMinute: 600).isInstant)
+    }
 }

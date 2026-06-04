@@ -9,23 +9,44 @@ import Foundation
 
 /// A scheduled span to draw on the dial (e.g. a task's scheduled block).
 public struct SectographItem: Identifiable, Equatable, Sendable {
+    /// How an item reads on the dial: a duration `span` (fat arc) or an `instant` (dashed spoke + chip).
+    public enum Kind: Sendable, Equatable { case span, instant }
+
     public var id: String
     /// Minutes into the day, 0…1440. A block that wraps midnight has `endMinute < startMinute`.
     public var startMinute: Int
     public var endMinute: Int
     public var colorHex: String?
+    // Presentation hints (all defaulted, so every existing call site/test compiles unchanged). These
+    // drive emphasis/markers in the view but never affect the pure angle/arc math.
+    public var kind: Kind
+    /// SF Symbol drawn beside an instant marker (typically the task's list icon).
+    public var symbolName: String?
+    /// Completed work — drawn dimmed so it recedes behind live blocks.
+    public var isDone: Bool
+    /// Caller-driven "important/current" override; the view also auto-emphasizes the block holding now.
+    public var isEmphasized: Bool
 
-    public init(id: String, startMinute: Int, endMinute: Int, colorHex: String? = nil) {
+    public init(id: String, startMinute: Int, endMinute: Int, colorHex: String? = nil,
+                kind: Kind = .span, symbolName: String? = nil,
+                isDone: Bool = false, isEmphasized: Bool = false) {
         self.id = id
         self.startMinute = startMinute
         self.endMinute = endMinute
         self.colorHex = colorHex
+        self.kind = kind
+        self.symbolName = symbolName
+        self.isDone = isDone
+        self.isEmphasized = isEmphasized
     }
 
     /// Duration in minutes, accounting for a midnight wrap.
     public var durationMinutes: Int {
         endMinute >= startMinute ? endMinute - startMinute : (1440 - startMinute) + endMinute
     }
+
+    /// True when this should render as a point marker rather than a swept arc.
+    public var isInstant: Bool { kind == .instant || durationMinutes <= 0 }
 }
 
 /// A resolved arc ready to stroke (angles in radians; radii in points).
@@ -124,12 +145,49 @@ public struct SectographLayout: Equatable, Sendable {
     public func hitTest(at point: CGPoint, items: [SectographItem]) -> SectographItem.ID? {
         guard ringContains(point) else { return nil }
         let minute = time(at: point)
-        return items.first { item in
-            if item.endMinute >= item.startMinute {
-                return minute >= item.startMinute && minute < item.endMinute
-            } else { // wraps midnight
-                return minute >= item.startMinute || minute < item.endMinute
-            }
-        }?.id
+        return items.first { contains(minute: minute, $0) }?.id
     }
+
+    /// Whether a minute falls within an item's span (midnight-wrap aware). The single source of truth
+    /// for "is this block active at minute m", shared by hit-testing and current-block emphasis.
+    public func contains(minute: Int, _ item: SectographItem) -> Bool {
+        if item.endMinute >= item.startMinute {
+            return minute >= item.startMinute && minute < item.endMinute
+        } else { // wraps midnight
+            return minute >= item.startMinute || minute < item.endMinute
+        }
+    }
+}
+
+// MARK: - Label-placement geometry (pure, testable)
+
+public extension SectographLayout {
+    /// The radius of the arc band's centerline.
+    var midRadius: CGFloat { (innerRadius + outerRadius) / 2 }
+
+    /// The render angle (radians) at the middle of an item's sweep — midnight-wrap aware, so an
+    /// 11pm→1am block resolves to the top of the dial. Used to anchor an on-arc label.
+    func midAngle(for item: SectographItem) -> Double {
+        let mid = (item.startMinute + item.durationMinutes / 2) % minutesPerDay
+        return angle(forMinute: mid)
+    }
+
+    /// Arc length in points along the centerline for an item's sweep. Drives the label threshold.
+    func arcLength(for item: SectographItem) -> CGFloat {
+        let sweep = Double(item.durationMinutes) / Double(minutesPerDay) * 2 * .pi
+        return CGFloat(sweep) * midRadius
+    }
+
+    /// Whether an arc is long enough to carry on-arc text. Because labels truncate, we only require
+    /// room for the first few glyphs (`min(charCount, floorChars)` × `minPointsPerChar`).
+    func shouldLabel(_ item: SectographItem, charCount: Int,
+                     minPointsPerChar: CGFloat = 7, floorChars: Int = 4) -> Bool {
+        guard charCount > 0, !item.isInstant else { return false }
+        let need = CGFloat(min(charCount, floorChars)) * minPointsPerChar
+        return arcLength(for: item) >= need
+    }
+
+    /// True when tangent text at this render angle would read upside-down (the left half of the dial,
+    /// where `cos(angle) < 0`) and should be rotated 180° to stay upright.
+    func textNeedsFlip(at angle: Double) -> Bool { cos(angle) < 0 }
 }
