@@ -114,6 +114,16 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: with `-seedDemo` (signed in), wipe + seed a realistic day of lists/tasks via the real
+    /// mutation paths so the app looks populated. Always `false` in release.
+    static var isSeedDemo: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-seedDemo")
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: with `-liveSync -liveQuickAddDemo`, the app parses a natural-language phrase and
     /// composes it into a task via the real quick-add path on launch (DevelopmentPlan P1-H). Always
     /// `false` in release.

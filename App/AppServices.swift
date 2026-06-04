@@ -450,6 +450,79 @@ final class AppServices {
         print("LIST demo: done list=\(listId ?? "nil") tag=\(tagId ?? "nil")")
     }
 
+    /// DEBUG (`-seedDemo`): wipe existing data and seed a realistic, cohesive day — three colored lists,
+    /// scheduled blocks across the day (incl. one spanning *now* and one done), due-only markers, and a
+    /// couple of inbox tasks — all via the real mutation paths, then flush. Idempotent: re-running first
+    /// clears, so it always resets to the same clean set.
+    func seedDemoData(ownerId: String) async {
+        let ctx = container.mainContext
+        let cal = Calendar.current
+        let now = clock.now()
+        func at(_ h: Int, _ m: Int = 0) -> Date { cal.date(bySettingHour: h, minute: m, second: 0, of: now) ?? now }
+
+        let listMut = ListMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator, ownerId: ownerId)
+        let tagMut = TagMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator, ownerId: ownerId)
+        let creator = TaskCreation(context: ctx, engine: syncEngine, ownerId: ownerId, clock: clock, idGenerator: idGenerator)
+        let taskMut = TaskMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator)
+
+        // Clean slate so a reseed is deterministic (clears prior test junk too).
+        for t in (try? ctx.fetch(FetchDescriptor<TaskModel>(predicate: #Predicate { $0.deletedAt == nil }))) ?? [] {
+            await taskMut.delete(t)
+        }
+        for l in (try? ctx.fetch(FetchDescriptor<TaskListModel>(predicate: #Predicate { $0.deletedAt == nil }))) ?? [] {
+            await listMut.delete(l)
+        }
+        for tag in (try? ctx.fetch(FetchDescriptor<TagModel>(predicate: #Predicate { $0.deletedAt == nil }))) ?? [] {
+            await tagMut.delete(tag)
+        }
+        await syncOnce()
+
+        let work = await listMut.create(name: "Work", colorHex: "#2E7DF6", icon: "briefcase.fill")
+        let health = await listMut.create(name: "Health", colorHex: "#34C759", icon: "heart.fill")
+        let personal = await listMut.create(name: "Personal", colorHex: "#FF9F0A", icon: "house.fill")
+        _ = await tagMut.create(name: "urgent", colorHex: "#EF4444")
+        _ = await tagMut.create(name: "focus", colorHex: "#5E5CE6")
+        await syncOnce()
+
+        func fetch(_ id: String) -> TaskModel? {
+            var d = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == id }); d.fetchLimit = 1
+            return try? ctx.fetch(d).first
+        }
+        func scheduled(_ title: String, _ list: String?, _ sh: Int, _ sm: Int, _ eh: Int, _ em: Int,
+                       priority: Priority = .none, done: Bool = false) async {
+            let id = await creator.createTask(title: title, listId: list)
+            guard let t = fetch(id) else { return }
+            await taskMut.setSchedule(t, start: at(sh, sm), end: at(eh, em))
+            if priority != .none { await taskMut.setPriority(t, priority) }
+            if done { await taskMut.toggleComplete(t) }
+        }
+
+        // A block spanning "now" → the emphasised current arc.
+        let nowId = await creator.createTask(title: "Focus block", listId: work)
+        if let t = fetch(nowId) {
+            await taskMut.setSchedule(t, start: now.addingTimeInterval(-30 * 60), end: now.addingTimeInterval(60 * 60))
+            await taskMut.setPriority(t, .p1)
+        }
+        await scheduled("Morning run", health, 6, 30, 7, 15, priority: .p3, done: true)
+        await scheduled("Deep work — API design", work, 9, 0, 11, 0, priority: .p1)
+        await scheduled("Lunch with Sam", personal, 12, 0, 13, 0)
+        await scheduled("Team sync", work, 13, 30, 14, 15, priority: .p2)
+        await scheduled("Gym session", health, 18, 0, 19, 0, priority: .p3)
+
+        // Due-only tasks → instant markers on the dial.
+        let dentist = await creator.createTask(title: "Call the dentist", listId: personal)
+        if let t = fetch(dentist) { await taskMut.reschedule(t, dueAt: at(16, 0)); await taskMut.setPriority(t, .p2) }
+        let expense = await creator.createTask(title: "Submit expense report", listId: work)
+        if let t = fetch(expense) { await taskMut.reschedule(t, dueAt: at(17, 30)) }
+
+        // A couple of unscheduled inbox tasks.
+        _ = await creator.createTask(title: "Read “Deep Work”, ch. 3", listId: personal)
+        _ = await creator.createTask(title: "Plan next sprint", listId: work)
+
+        await syncOnce()
+        print("SEED demo: done")
+    }
+
     /// DEBUG (`-liveQuickAddDemo`): parse a natural-language phrase and compose it into a task via the
     /// real `composeQuickAdd` path, proving P1-H end-to-end (parse → fields → server).
     func liveQuickAddDemo(ownerId: String) async {

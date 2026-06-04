@@ -142,6 +142,10 @@ struct RootTabView: View {
             if AppConfig.isLiveCrudDemo, case let .signedIn(userId) = auth.state, let userId {
                 await services.liveCrudDemo(ownerId: userId)
             }
+            // `-seedDemo`: wipe + seed a realistic day (lists + scheduled tasks + due markers).
+            if AppConfig.isSeedDemo, case let .signedIn(userId) = auth.state, let userId {
+                await services.seedDemoData(ownerId: userId)
+            }
             // `-liveListDemo`: create list + tag + assigned task via the real mutation paths.
             if AppConfig.isLiveListDemo, case let .signedIn(userId) = auth.state, let userId {
                 await services.liveListDemo(ownerId: userId)
