@@ -22,6 +22,8 @@ final class AppServices {
     let focus: FocusController
     /// Read-only EventKit calendar access for the free/busy overlay (P2-5).
     let calendar = CalendarService()
+    /// The single Pro-entitlement gate (P6-4); server-validated, drives the StoreKit paywall.
+    let entitlements: Entitlements
 
     private let container: ModelContainer
 
@@ -43,6 +45,7 @@ final class AppServices {
         // it can refresh. (configure(apiClient:) closes the loop.)
         self.apiClient = APIClient(tokenProvider: auth)
         auth.configure(apiClient: self.apiClient)
+        self.entitlements = Entitlements(apiClient: self.apiClient)
     }
 
     /// Run one sync cycle: flush local mutations, then pull deltas (AppSpec §8).

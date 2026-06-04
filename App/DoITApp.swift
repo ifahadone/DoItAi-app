@@ -112,6 +112,8 @@ struct RootTabView: View {
             // Ask for notification permission once the shell is up (reminders + alarm chains need it);
             // self-guards against headless demo launches so the prompt can't block them.
             await services.requestNotificationAuthorizationIfNeeded()
+            // Refresh the Pro entitlement from the server (the authority for feature gates, P6-4).
+            await services.entitlements.refresh()
             // Mirror scheduled blocks to Apple Calendar when the user enabled it in Settings (P3-7).
             if UserDefaults.standard.bool(forKey: "calendarWriteBackEnabled") && !AppConfig.isRunningDemo {
                 _ = await services.exportToCalendar()

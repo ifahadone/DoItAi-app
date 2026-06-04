@@ -194,6 +194,19 @@ actor APIClient: SyncTransport {
         }
     }
 
+    // MARK: - Billing (Phase 6, ApiSpec §12). The server validates StoreKit transactions.
+
+    func billingStatus() async throws -> BillingEntitlement {
+        try await send(method: "GET", path: "billing/status", bodyData: nil, authenticated: true, idempotent: false)
+    }
+
+    @discardableResult
+    func submitReceipt(_ signedTransaction: String) async throws -> BillingEntitlement {
+        struct Body: Encodable, Sendable { let signedTransaction: String }
+        return try await send(method: "POST", path: "billing/receipt",
+                              body: Body(signedTransaction: signedTransaction), authenticated: true, idempotent: false)
+    }
+
     // MARK: - Core request pipeline
 
     /// Encode `body` (if any) and delegate to the data-based sender. The typed entry point used by

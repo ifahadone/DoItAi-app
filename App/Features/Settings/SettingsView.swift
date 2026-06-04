@@ -14,10 +14,29 @@ struct SettingsView: View {
 
     @State private var exporting = false
     @State private var lastExport: String?
+    @State private var showPaywall = false
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Button { showPaywall = true } label: {
+                        HStack {
+                            Label(services.entitlements.isPro ? "DoIT Pro" : "Upgrade to DoIT Pro", systemImage: "crown.fill")
+                            Spacer()
+                            if services.entitlements.isPro {
+                                Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                            } else {
+                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                } footer: {
+                    Text(services.entitlements.isPro
+                         ? "Thanks for supporting DoIT. All Pro features are unlocked."
+                         : "Unlock the sectograph, AI, calendar write-back, analytics, unlimited routines, and sharing.")
+                }
+
                 Section {
                     Toggle("Enable the AI assistant", isOn: $aiConsent)
                 } header: {
@@ -57,6 +76,9 @@ struct SettingsView: View {
                 } footer: {
                     Text("Reminders and routine alarm chains deliver as notifications. Time-Sensitive alerts break through Focus when you allow them; a louder Critical alert needs a special Apple entitlement.")
                 }
+            }
+            .sheet(isPresented: $showPaywall) {
+                PaywallView().environment(services)
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
