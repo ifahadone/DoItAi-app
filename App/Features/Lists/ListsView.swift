@@ -32,6 +32,11 @@ struct ListsView: View {
                     } label: {
                         Label("Routines & Habits", systemImage: "repeat")
                     }
+                    NavigationLink {
+                        KeeperView()
+                    } label: {
+                        Label("Keeper — Notes & Folders", systemImage: "books.vertical.fill")
+                    }
                 }
 
                 Section("Lists") {

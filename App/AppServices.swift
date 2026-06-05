@@ -519,6 +519,23 @@ final class AppServices {
         _ = await creator.createTask(title: "Read “Deep Work”, ch. 3", listId: personal)
         _ = await creator.createTask(title: "Plan next sprint", listId: work)
 
+        // Keeper: a couple of folders + notes (one pinned, one unfiled).
+        let folderMut = NoteFolderMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator, ownerId: ownerId)
+        let noteMut = NoteMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator, ownerId: ownerId)
+        let ideas = await folderMut.create(name: "Ideas", colorHex: "#5E5CE6", icon: "lightbulb.fill")
+        let workNotes = await folderMut.create(name: "Work", colorHex: "#2E7DF6", icon: "briefcase.fill")
+        await syncOnce()
+        _ = await noteMut.create(title: "App launch checklist", folderId: workNotes,
+                                 body: "TestFlight build · screenshots · privacy labels · subscription products.")
+        _ = await noteMut.create(title: "Idea: weekly digest", folderId: ideas,
+                                 body: "Email a Sunday recap of streaks + next week's plan.")
+        let pinnedId = await noteMut.create(title: "Wifi & door codes", folderId: nil,
+                                            body: "Office wifi: DoIT-Guest / keep-it-simple")
+        if let pinnedId {
+            var d = FetchDescriptor<NoteModel>(predicate: #Predicate { $0.id == pinnedId }); d.fetchLimit = 1
+            if let note = try? ctx.fetch(d).first { await noteMut.setPinned(note, true) }
+        }
+
         await syncOnce()
         print("SEED demo: done")
     }

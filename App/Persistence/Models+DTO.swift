@@ -408,3 +408,65 @@ extension AlarmModel {
         syncState = .synced
     }
 }
+
+// MARK: - Keeper (note folders + notes)
+
+extension NoteFolderModel {
+    var syncState: LocalSyncState {
+        get { LocalSyncState(rawValue: syncStateRaw) ?? .synced }
+        set { syncStateRaw = newValue.rawValue }
+    }
+
+    static func make(from dto: NoteFolderDTO) -> NoteFolderModel {
+        let model = NoteFolderModel(
+            id: dto.id, ownerId: dto.ownerId, name: dto.name, colorHex: dto.colorHex, icon: dto.icon,
+            sortIndex: dto.sortIndex, createdAt: dto.createdAt, updatedAt: dto.updatedAt,
+            serverVersion: dto.serverVersion, syncStateRaw: LocalSyncState.synced.rawValue
+        )
+        model.apply(dto)
+        return model
+    }
+
+    func apply(_ dto: NoteFolderDTO) {
+        ownerId = dto.ownerId
+        name = dto.name
+        colorHex = dto.colorHex
+        icon = dto.icon
+        sortIndex = dto.sortIndex
+        createdAt = dto.createdAt
+        updatedAt = dto.updatedAt
+        serverVersion = dto.serverVersion
+        deletedAt = dto.deletedAt
+        syncState = .synced
+    }
+}
+
+extension NoteModel {
+    var syncState: LocalSyncState {
+        get { LocalSyncState(rawValue: syncStateRaw) ?? .synced }
+        set { syncStateRaw = newValue.rawValue }
+    }
+
+    static func make(from dto: NoteDTO) -> NoteModel {
+        let model = NoteModel(
+            id: dto.id, ownerId: dto.ownerId, folderId: dto.folderId, title: dto.title, body: dto.body,
+            pinned: dto.pinned, createdAt: dto.createdAt, updatedAt: dto.updatedAt,
+            serverVersion: dto.serverVersion, syncStateRaw: LocalSyncState.synced.rawValue
+        )
+        model.apply(dto)
+        return model
+    }
+
+    func apply(_ dto: NoteDTO) {
+        ownerId = dto.ownerId
+        folderId = dto.folderId
+        title = dto.title
+        body = dto.body
+        pinned = dto.pinned
+        createdAt = dto.createdAt
+        updatedAt = dto.updatedAt
+        serverVersion = dto.serverVersion
+        deletedAt = dto.deletedAt
+        syncState = .synced
+    }
+}

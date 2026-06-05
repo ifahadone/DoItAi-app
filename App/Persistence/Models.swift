@@ -388,6 +388,71 @@ final class AlarmModel {
     }
 }
 
+// ============================================================================
+// Keeper: note folders + notes (a personal knowledge keeper; AppSpec §16).
+// ============================================================================
+
+@Model
+final class NoteFolderModel {
+    @Attribute(.unique) var id: String
+    var ownerId: String
+    var name: String
+    var colorHex: String
+    /// SF Symbol name.
+    var icon: String
+    var sortIndex: Int
+    var createdAt: Date
+    var updatedAt: Date
+    var serverVersion: Int
+    var deletedAt: Date?
+    var syncStateRaw: Int
+
+    init(id: String, ownerId: String, name: String, colorHex: String, icon: String,
+         sortIndex: Int = 0, createdAt: Date, updatedAt: Date,
+         serverVersion: Int = 0, syncStateRaw: Int = LocalSyncState.pendingCreate.rawValue) {
+        self.id = id
+        self.ownerId = ownerId
+        self.name = name
+        self.colorHex = colorHex
+        self.icon = icon
+        self.sortIndex = sortIndex
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.serverVersion = serverVersion
+        self.syncStateRaw = syncStateRaw
+    }
+}
+
+@Model
+final class NoteModel {
+    @Attribute(.unique) var id: String
+    var ownerId: String
+    var folderId: String?
+    var title: String
+    var body: String
+    var pinned: Bool
+    var createdAt: Date
+    var updatedAt: Date
+    var serverVersion: Int
+    var deletedAt: Date?
+    var syncStateRaw: Int
+
+    init(id: String, ownerId: String, folderId: String? = nil, title: String, body: String = "",
+         pinned: Bool = false, createdAt: Date, updatedAt: Date,
+         serverVersion: Int = 0, syncStateRaw: Int = LocalSyncState.pendingCreate.rawValue) {
+        self.id = id
+        self.ownerId = ownerId
+        self.folderId = folderId
+        self.title = title
+        self.body = body
+        self.pinned = pinned
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.serverVersion = serverVersion
+        self.syncStateRaw = syncStateRaw
+    }
+}
+
 /// Per-entity local sync state (AppSpec §6 `SyncState`). Kept in the app target (not SyncCore) since
 /// it describes local persistence, not the wire contract.
 enum LocalSyncState: Int, Codable, Sendable {
