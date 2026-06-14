@@ -14,6 +14,8 @@ struct DoITApp: App {
     @State private var auth: AuthService
     @State private var services: AppServices
     private let container: ModelContainer
+    /// Retained for the process lifetime: `UNUserNotificationCenter` holds its delegate weakly.
+    private let notificationHandler: NotificationActionHandler
 
     init() {
         let container = PersistenceContainer.makeShared()
@@ -21,9 +23,14 @@ struct DoITApp: App {
         if AppConfig.isUIDemo { DemoData.seed(into: container) }
         #endif
         let auth = AuthService()
+        let services = AppServices(container: container, auth: auth)
         self.container = container
         _auth = State(initialValue: auth)
-        _services = State(initialValue: AppServices(container: container, auth: auth))
+        _services = State(initialValue: services)
+        // Install the actionable-notification delegate + Complete/Snooze category (P1-I).
+        let handler = NotificationActionHandler(container: container, services: services)
+        handler.register()
+        self.notificationHandler = handler
     }
 
     var body: some Scene {

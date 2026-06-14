@@ -35,7 +35,11 @@ struct NotificationScheduler {
         for item in planned {
             let content = UNMutableNotificationContent()
             content.title = item.title.isEmpty ? "Reminder" : item.title
+            content.body = item.fireAt.formatted(date: .omitted, time: .shortened)
             content.sound = .default
+            // Carry the Complete / Snooze action buttons + the ids the action handler resolves.
+            content.categoryIdentifier = NotificationActionHandler.categoryId
+            content.userInfo = ["taskId": item.taskId, "reminderId": item.reminderId]
             let dateComponents = Calendar.current.dateComponents(components, from: item.fireAt)
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
             let request = UNNotificationRequest(identifier: identifierPrefix + item.reminderId, content: content, trigger: trigger)
