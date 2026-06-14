@@ -123,6 +123,9 @@ struct RootTabView: View {
                 .tag(Tab.insights)
         }
         .task {
+            // Rehydrate any unsynced outbox + pull cursor from a previous run BEFORE the first sync,
+            // so offline edits made before an app kill still flush (AppSpec §8).
+            await services.bootstrapPersistedState()
             // Live-sync (`-liveSync`): initial flush + pull when the shell appears, so the app shows
             // what's already on the server. TODO(Phase 1): trigger on foreground + after each mutation
             // for all signed-in sessions (not just the dev demo mode).

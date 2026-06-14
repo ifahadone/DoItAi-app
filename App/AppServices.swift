@@ -26,6 +26,9 @@ final class AppServices {
     let entitlements: Entitlements
 
     private let container: ModelContainer
+    /// The durable outbox/cursor snapshot from a previous run, rehydrated into the engine at launch
+    /// (see ``bootstrapPersistedState()``). `nil` on a first run.
+    private let persistedStateAtLaunch: OutboxPersistenceStore.State?
 
     init(container: ModelContainer, auth: AuthService) {
         self.container = container
@@ -37,15 +40,28 @@ final class AppServices {
         self.idGenerator = idGenerator
         self.focus = FocusController(clock: clock)
 
-        // The engine writes pulled changes into SwiftData through this store.
+        // The engine writes pulled changes into SwiftData through this store, and persists its outbox
+        // + pull cursor through the file-backed store so unsynced work survives an app relaunch (§8).
         let store = SwiftDataSyncStore(container: container)
-        self.syncEngine = DefaultSyncEngine(clock: clock, store: store)
+        let outboxPersistence = OutboxPersistenceStore()
+        let saved = outboxPersistence.load()
+        self.persistedStateAtLaunch = saved
+        self.syncEngine = DefaultSyncEngine(clock: clock, store: store,
+                                            initialCursor: saved?.cursor, persister: outboxPersistence)
 
         // APIClient uses AuthService as its token provider; AuthService is told about the client so
         // it can refresh. (configure(apiClient:) closes the loop.)
         self.apiClient = APIClient(tokenProvider: auth)
         auth.configure(apiClient: self.apiClient)
         self.entitlements = Entitlements(apiClient: self.apiClient)
+    }
+
+    /// Rehydrate the durable outbox + pull cursor saved by a previous run (AppSpec §8) so offline edits
+    /// survive a relaunch/crash. Call once at launch BEFORE the first sync; the engine guards against a
+    /// double restore and against clobbering work enqueued during startup.
+    func bootstrapPersistedState() async {
+        guard let saved = persistedStateAtLaunch, !(saved.outbox.isEmpty && saved.cursor == nil) else { return }
+        await syncEngine.restore(outbox: saved.outbox, cursor: saved.cursor)
     }
 
     /// Run one sync cycle: flush local mutations, then pull deltas (AppSpec §8).

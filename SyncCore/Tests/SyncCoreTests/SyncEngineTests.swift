@@ -50,6 +50,22 @@ private actor SelectivelyFailingStore: SyncStore {
     }
 }
 
+/// Records every persisted snapshot so tests can assert the durable queue/cursor track engine state.
+/// `save` is synchronous (per the protocol) and called from the engine actor, so an NSLock guards the
+/// recorded saves against the test thread reading concurrently.
+private final class RecordingPersister: SyncStatePersisting, @unchecked Sendable {
+    private let lock = NSLock()
+    private var saves: [(outbox: [OutboxOp], cursor: String?)] = []
+
+    func save(outbox: [OutboxOp], cursor: String?) {
+        lock.lock(); defer { lock.unlock() }
+        saves.append((outbox, cursor))
+    }
+    var saveCount: Int { lock.lock(); defer { lock.unlock() }; return saves.count }
+    var lastOutboxIds: [String] { lock.lock(); defer { lock.unlock() }; return saves.last?.outbox.map(\.opId) ?? [] }
+    var lastCursor: String? { lock.lock(); defer { lock.unlock() }; return saves.last.flatMap { $0.cursor } }
+}
+
 // MARK: - Tests
 
 final class SyncEngineTests: XCTestCase {
@@ -285,6 +301,82 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(recorded.map(\.entityId), ["task-1"])
         let cursor = await engine.currentCursor
         XCTAssertEqual(cursor, "Nw==")
+    }
+
+    // MARK: Durable outbox + cursor persistence (AppSpec §8)
+
+    func testEnqueuePersistsOutbox() async {
+        let persister = RecordingPersister()
+        let engine = DefaultSyncEngine(clock: clock, persister: persister)
+        await engine.enqueue(makeOp(id: "1"))
+        await engine.enqueue(makeOp(id: "2"))
+        XCTAssertEqual(persister.lastOutboxIds, ["1", "2"], "every enqueue persists the full queue")
+        XCTAssertNil(persister.lastCursor)
+    }
+
+    func testFlushPersistsReducedQueue() async throws {
+        let persister = RecordingPersister()
+        let engine = DefaultSyncEngine(clock: clock, persister: persister)
+        await engine.enqueue(makeOp(id: "a"))
+        await engine.enqueue(makeOp(id: "b"))
+
+        let transport = FakeTransport()
+        await transport.setPushResponder { request in
+            SyncPushResponse(results: request.ops.map { op in
+                // "a" sticks (rejected); "b" drains (applied).
+                SyncPushResult(opId: op.opId, entityId: op.entityId,
+                               status: op.opId == "a" ? .rejected : .applied,
+                               serverVersion: 1, committedSeq: "5")
+            })
+        }
+        _ = try await engine.flush(using: transport)
+        XCTAssertEqual(persister.lastOutboxIds, ["a"], "the durable queue keeps only the rejected op after flush")
+    }
+
+    func testPullPersistsCursor() async throws {
+        let persister = RecordingPersister()
+        let engine = DefaultSyncEngine(clock: clock, persister: persister)
+        let transport = FakeTransport()
+        await transport.setPullResponder { _ in
+            SyncPullResponse(changes: [], nextCursor: "MTA=", hasMore: false)
+        }
+        _ = try await engine.applyPull(using: transport)
+        XCTAssertEqual(persister.lastCursor, "MTA=", "the advanced cursor is checkpointed for resume-after-relaunch")
+    }
+
+    func testRestoreRehydratesQueueAndCursorOnce() async {
+        let engine = DefaultSyncEngine(clock: clock)
+        await engine.restore(outbox: [makeOp(id: "1"), makeOp(id: "2")], cursor: "saved")
+        let pending = await engine.pendingCount
+        let cursor = await engine.currentCursor
+        XCTAssertEqual(pending, 2)
+        XCTAssertEqual(cursor, "saved")
+
+        // A second restore is ignored (rehydration is once-per-process).
+        await engine.restore(outbox: [makeOp(id: "3")], cursor: "other")
+        let pendingAfter = await engine.snapshotOutbox().map(\.opId)
+        XCTAssertEqual(pendingAfter, ["1", "2"], "restore is idempotent — the second call is a no-op")
+    }
+
+    func testRestorePrependsAndDedupesAgainstStartupEnqueues() async {
+        let engine = DefaultSyncEngine(clock: clock)
+        // An op enqueued during startup, before the persisted queue is rehydrated.
+        await engine.enqueue(makeOp(id: "2"))
+        // Persisted queue includes a NEW op "1" and a duplicate of "2".
+        await engine.restore(outbox: [makeOp(id: "1"), makeOp(id: "2")], cursor: "c")
+        let ids = await engine.snapshotOutbox().map(\.opId)
+        XCTAssertEqual(ids, ["1", "2"], "persisted ops prepend ahead of startup enqueues, de-duped by opId")
+        // The in-memory cursor (nil here) is replaced by the saved one since none had advanced yet.
+        let cursor = await engine.currentCursor
+        XCTAssertEqual(cursor, "c")
+    }
+
+    func testNoPersisterIsInert() async {
+        // The default (no persister) path must behave exactly as before — purely in-memory.
+        let engine = DefaultSyncEngine(clock: clock)
+        await engine.enqueue(makeOp(id: "1"))
+        let pending = await engine.pendingCount
+        XCTAssertEqual(pending, 1)
     }
 
     // MARK: Backoff policy (pure math)

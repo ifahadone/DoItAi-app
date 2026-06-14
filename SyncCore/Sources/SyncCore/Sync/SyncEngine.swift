@@ -35,6 +35,17 @@ public protocol SyncStore: Sendable {
     func apply(_ change: SyncPullChange) async throws
 }
 
+/// Durable-persistence boundary for the outbox queue + pull cursor (AppSpec §8 "the queue is the
+/// source of unsynced work and must be durable").
+///
+/// Keeps the engine free of the filesystem: the app target provides a file/SwiftData-backed
+/// implementation; tests use an in-memory fake. `save` is invoked on the engine's actor whenever the
+/// queue or cursor changes, so implementations MUST return quickly — encode the (small) snapshot and
+/// offload any real I/O to a background queue rather than blocking the actor.
+public protocol SyncStatePersisting: Sendable {
+    func save(outbox: [OutboxOp], cursor: String?)
+}
+
 /// Tuning for retry/backoff. Pure values so backoff math is testable with a fixed clock.
 public struct SyncBackoffPolicy: Sendable, Equatable {
     public var baseDelay: TimeInterval
@@ -66,19 +77,31 @@ public actor DefaultSyncEngine: SyncEngine {
     private let store: SyncStore?
     private let resolver: ConflictResolver
     private let backoff: SyncBackoffPolicy
+    /// Optional durable backing for the outbox + cursor. `nil` (the default) keeps the engine purely
+    /// in-memory — existing behavior + tests are unchanged.
+    private let persister: SyncStatePersisting?
+    /// Guards `restore(...)` so a persisted queue is rehydrated at most once per process.
+    private var didRestore = false
 
     public init(
         clock: Clock = SystemClock(),
         store: SyncStore? = nil,
         resolver: ConflictResolver = ConflictResolver(),
         backoff: SyncBackoffPolicy = SyncBackoffPolicy(),
-        initialCursor: String? = nil
+        initialCursor: String? = nil,
+        persister: SyncStatePersisting? = nil
     ) {
         self.clock = clock
         self.store = store
         self.resolver = resolver
         self.backoff = backoff
         self.cursor = initialCursor
+        self.persister = persister
+    }
+
+    /// Persist the current queue + cursor through the injected backing (no-op when none is set).
+    private func persist() {
+        persister?.save(outbox: outbox, cursor: cursor)
     }
 
     public var pendingCount: Int { outbox.count }
@@ -93,9 +116,8 @@ public actor DefaultSyncEngine: SyncEngine {
         // TODO(Phase 1): coalesce consecutive upserts for the same entityId into a single op
         //   (merge field patches, keep the latest clientUpdatedAt) so the outbox doesn't grow
         //   unbounded under rapid edits. For now we append verbatim, preserving order.
-        // TODO(Phase 1): persist the outbox (SwiftData/file) so it survives app relaunch — the
-        //   queue is the source of unsynced work and must be durable (AppSpec §8).
         outbox.append(op)
+        persist() // durable — the queue must survive app relaunch (AppSpec §8)
         return op
     }
 
@@ -136,6 +158,7 @@ public actor DefaultSyncEngine: SyncEngine {
             response.results.filter { $0.status == .rejected }.map(\.opId)
         )
         outbox.removeAll { batchIds.contains($0.opId) && !keepQueued.contains($0.opId) }
+        persist() // flushed ops are gone from the durable queue; rejected ones stay for retry
 
         return response.results
     }
@@ -175,12 +198,24 @@ public actor DefaultSyncEngine: SyncEngine {
 
             pageCursor = response.nextCursor
             cursor = pageCursor
+            persist() // checkpoint the cursor per page so an interrupted pull resumes, not restarts
             if !response.hasMore { break }
         }
         return applied
     }
 
     // MARK: - Testing / wiring helpers
+
+    /// Rehydrate a persisted queue + cursor at launch (AppSpec §8). Idempotent (runs at most once),
+    /// and safe against a startup race: persisted ops are prepended ahead of anything already enqueued
+    /// this session, de-duped by `opId`, and a cursor already advanced in-memory is not clobbered.
+    public func restore(outbox ops: [OutboxOp], cursor savedCursor: String?) {
+        guard !didRestore else { return }
+        didRestore = true
+        let existingIds = Set(outbox.map(\.opId))
+        outbox = ops.filter { !existingIds.contains($0.opId) } + outbox
+        if cursor == nil { cursor = savedCursor }
+    }
 
     /// Replace the outbox wholesale (e.g. when rehydrating a persisted queue at launch).
     public func loadOutbox(_ ops: [OutboxOp]) {
