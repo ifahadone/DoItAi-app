@@ -30,11 +30,19 @@ struct RoutineBuilderView: View {
                 }
 
                 if !isHabit {
-                    Section("Steps") {
+                    Section {
                         ForEach(steps.indices, id: \.self) { index in
                             HStack {
                                 TextField("Step", text: $steps[index].title)
                                 Spacer()
+                                Button {
+                                    steps[index].hasAlarm.toggle()
+                                } label: {
+                                    Image(systemName: steps[index].hasAlarm ? "bell.fill" : "bell.slash")
+                                        .foregroundStyle(steps[index].hasAlarm ? Color.accentColor : .secondary)
+                                }
+                                .buttonStyle(.borderless)
+                                .accessibilityLabel(steps[index].hasAlarm ? "Alarm on" : "Alarm off")
                                 Stepper("\(steps[index].minutes)m", value: $steps[index].minutes, in: 0...600, step: 5)
                                     .fixedSize()
                             }
@@ -44,6 +52,10 @@ struct RoutineBuilderView: View {
                         Button { steps.append(RoutineStep(title: "", minutes: 15, ord: steps.count)) } label: {
                             Label("Add step", systemImage: "plus")
                         }
+                    } header: {
+                        Text("Steps")
+                    } footer: {
+                        Text("Tap the bell on a step to get a Time-Sensitive alarm when it begins.")
                     }
                     Section("Schedule") {
                         Toggle("Chain steps (auto-start next)", isOn: $chained)
