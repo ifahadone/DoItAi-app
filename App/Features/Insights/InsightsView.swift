@@ -95,11 +95,23 @@ struct InsightsView: View {
             let byHour = Analytics.productivityByHour(stats, calendar: .current)
             let byList = Analytics.timeByList(stats)
             let backlog = Analytics.backlog(stats, now: now)
+            let focus = Analytics.focus(stats)
 
             completionCard(completion)
             productivityCard(byHour)
             if !byList.isEmpty { timeAllocationCard(byList) }
             backlogCard(backlog)
+            if focus.sessions > 0 { focusCard(focus) }
+        }
+    }
+
+    private func focusCard(_ f: Analytics.Focus) -> some View {
+        cardShell("Focus time", systemImage: "timer") {
+            HStack(spacing: theme.spacing.lg) {
+                metric("\(f.totalMinutes)m", "Total")
+                metric("\(f.sessions)", "Sessions")
+                metric("\(f.avgMinutes)m", "Avg")
+            }
         }
     }
 
