@@ -3,7 +3,7 @@ import SwiftData
 import SyncCore
 import DesignSystem
 
-/// Keeper — a personal knowledge keeper (AppSpec §16): notes organized into colored folders for easy
+/// Keeper — a personal knowledge keeper (added feature; see DevelopmentPlan §10.5): notes in colored folders for easy
 /// access. Reached from the Lists tab; drills folders → notes → the note editor. Everything round-trips
 /// through the same entity-agnostic sync as tasks/lists. Designed to live inside the Lists tab's
 /// `NavigationStack` (no nested stack here).

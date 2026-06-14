@@ -43,6 +43,7 @@ struct TodayView: View {
     @State private var showSettings = false
     @State private var showAssistant = false
     @State private var showDialPicker = false
+    @State private var showQuickAdd = false
     @State private var searchText = ""
     /// AI search result (P4-7): the structured filter applied locally. Nil ⇒ plain text contains.
     @State private var aiFilter: AISearchFilter?
@@ -57,15 +58,28 @@ struct TodayView: View {
                         let dialItems = sectographItems
                         let busy = busyItems
                         if !dialItems.isEmpty || !busy.isEmpty {
-                            SectographDial(items: dialItems, busy: busy, labels: dialLabels,
-                                            titles: dialTitles, style: dialStyle)
-                                .frame(height: 240)
-                                .padding(.top, theme.spacing.sm)
-                                .padding(.horizontal, theme.spacing.xl)
-                                .contentShape(Rectangle())
-                                .onTapGesture { showDialPicker = true }
-                                .accessibilityAddTraits(.isButton)
-                                .accessibilityHint("Change the day-dial style")
+                            GeometryReader { geo in
+                                // The dial draws as a centered square inside this frame; reconstruct the
+                                // same SectographLayout so a tap maps to a block (or a free time slot).
+                                let side = min(geo.size.width, geo.size.height)
+                                let ox = (geo.size.width - side) / 2
+                                let oy = (geo.size.height - side) / 2
+                                let layout = SectographLayout(size: CGSize(width: side, height: side), ringWidth: 24)
+                                SectographDial(items: dialItems, busy: busy, labels: dialLabels,
+                                                titles: dialTitles, style: dialStyle)
+                                    .contentShape(Rectangle())
+                                    .gesture(SpatialTapGesture().onEnded { v in
+                                        handleDialTap(CGPoint(x: v.location.x - ox, y: v.location.y - oy),
+                                                      layout: layout, items: dialItems)
+                                    })
+                                    .simultaneousGesture(
+                                        LongPressGesture(minimumDuration: 0.45).onEnded { _ in showDialPicker = true })
+                                    .accessibilityAddTraits(.isButton)
+                                    .accessibilityHint("Tap a block to open it, tap a free slot to add a task, long-press to change the dial style")
+                            }
+                            .frame(height: 240)
+                            .padding(.top, theme.spacing.sm)
+                            .padding(.horizontal, theme.spacing.xl)
                         }
                         taskList
                     }
@@ -112,6 +126,9 @@ struct TodayView: View {
             .sheet(isPresented: $showDialPicker) {
                 NavigationStack { DialStylePicker() }
                     .presentationDetents([.medium, .large])
+            }
+            .sheet(isPresented: $showQuickAdd) {
+                QuickAddView().environment(auth).environment(services)
             }
             .searchable(text: $searchText, prompt: services.aiConsentEnabled ? "Search or ask…" : "Search")
             .onChange(of: searchText) { _, _ in aiFilter = nil } // editing invalidates the AI filter
@@ -273,6 +290,17 @@ struct TodayView: View {
             if let task = tasks.first(where: { $0.id == item.id }) { result[item.id] = task.title }
         }
         return result
+    }
+
+    /// Map a tap on the dial to an action: hit a block → open it; hit a free slot in the ring band →
+    /// quick-add a task; tap the center/outside → ignore. Uses the pure ``SectographLayout`` geometry.
+    private func handleDialTap(_ point: CGPoint, layout: SectographLayout, items: [SectographItem]) {
+        if let id = layout.hitTest(at: point, items: items),
+           let task = tasks.first(where: { $0.id == id }) {
+            selectedTask = task
+        } else if layout.ringContains(point) {
+            showQuickAdd = true
+        }
     }
 
     /// Calendar free/busy blocks for the dial overlay (P2-5): real EventKit data when authorized,

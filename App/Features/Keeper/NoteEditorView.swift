@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import SyncCore
 
-/// Edit a single note (Keeper; AppSpec §16). Title + free-form body, with a pin toggle. Text edits are
+/// Edit a single note (Keeper — added feature; see DevelopmentPlan §10.5). Title + free-form body, with a pin toggle. Text edits are
 /// committed on Done (each a no-op if unchanged) and flushed when live-syncing.
 struct NoteEditorView: View {
     @Environment(\.dismiss) private var dismiss

@@ -389,7 +389,7 @@ final class AlarmModel {
 }
 
 // ============================================================================
-// Keeper: note folders + notes (a personal knowledge keeper; AppSpec §16).
+// Keeper: note folders + notes (a personal knowledge keeper; added feature, see DevelopmentPlan §10.5).
 // ============================================================================
 
 @Model

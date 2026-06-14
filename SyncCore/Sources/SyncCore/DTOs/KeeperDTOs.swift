@@ -1,6 +1,6 @@
 import Foundation
 
-/// Wire DTOs for the Keeper feature (notes organized by folder; ApiSpec §5.9). Synced like any other
+/// Wire DTOs for the Keeper feature (notes organized by folder; added feature, see DevelopmentPlan §10.5). Synced like any other
 /// entity — payloads are RFC3339-normalized server-side (`iso()`), so timestamps decode as `Date`.
 
 public struct NoteFolderDTO: Codable, Sendable, Equatable, Identifiable {
