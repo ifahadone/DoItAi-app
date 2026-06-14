@@ -25,6 +25,8 @@ struct TaskDetailView: View {
     @State private var showingFocus = false
 
     @State private var reminders: [ReminderModel] = []
+    @State private var checklistItems: [ChecklistItemModel] = []
+    @State private var newChecklistText = ""
     @State private var showLocationReminder = false
     @State private var showTimeReminder = false
     @State private var timeDraft = Date().addingTimeInterval(3600)
@@ -37,6 +39,11 @@ struct TaskDetailView: View {
     private var reminderMutation: ReminderMutation {
         ReminderMutation(context: modelContext, engine: services.syncEngine, clock: services.clock,
                          idGenerator: services.idGenerator, ownerId: services.currentOwnerId)
+    }
+
+    private var checklistMutation: ChecklistMutation {
+        ChecklistMutation(context: modelContext, engine: services.syncEngine, clock: services.clock,
+                          idGenerator: services.idGenerator, ownerId: services.currentOwnerId)
     }
 
     var body: some View {
@@ -90,6 +97,31 @@ struct TaskDetailView: View {
                         Button { showLocationReminder = true } label: { Label("At a place…", systemImage: "mappin.and.ellipse") }
                     } label: {
                         Label("Add Reminder", systemImage: "plus")
+                    }
+                }
+
+                Section("Subtasks") {
+                    ForEach(checklistItems) { item in
+                        Button { Task { await toggleChecklist(item) } } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(item.done ? .green : .secondary)
+                                Text(item.text)
+                                    .strikethrough(item.done)
+                                    .foregroundStyle(item.done ? .secondary : .primary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .onDelete { offsets in Task { await deleteChecklist(at: offsets) } }
+
+                    HStack {
+                        Image(systemName: "plus.circle").foregroundStyle(.secondary)
+                        TextField("Add subtask", text: $newChecklistText)
+                            .onSubmit { Task { await addChecklistItem() } }
+                        if !newChecklistText.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Button("Add") { Task { await addChecklistItem() } }
+                        }
                     }
                 }
 
@@ -186,6 +218,7 @@ struct TaskDetailView: View {
                 hasDueDate = task.dueAt != nil
                 dueDraft = task.dueAt ?? Date()
                 loadReminders()
+                loadChecklist()
             }
         }
     }
@@ -222,6 +255,36 @@ struct TaskDetailView: View {
         reminders = (try? modelContext.fetch(FetchDescriptor<ReminderModel>(
             predicate: #Predicate { $0.taskId == taskId && $0.deletedAt == nil },
             sortBy: [SortDescriptor(\.createdAt)]))) ?? []
+    }
+
+    private func loadChecklist() {
+        let taskId = task.id
+        checklistItems = (try? modelContext.fetch(FetchDescriptor<ChecklistItemModel>(
+            predicate: #Predicate { $0.taskId == taskId && $0.deletedAt == nil },
+            sortBy: [SortDescriptor(\.ord), SortDescriptor(\.createdAt)]))) ?? []
+    }
+
+    private func addChecklistItem() async {
+        let text = newChecklistText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        await checklistMutation.create(taskId: task.id, text: text, ord: checklistItems.count)
+        newChecklistText = ""
+        await syncIfLive()
+        loadChecklist()
+    }
+
+    private func toggleChecklist(_ item: ChecklistItemModel) async {
+        await checklistMutation.toggle(item)
+        await syncIfLive()
+        loadChecklist()
+    }
+
+    private func deleteChecklist(at offsets: IndexSet) async {
+        for index in offsets where checklistItems.indices.contains(index) {
+            await checklistMutation.delete(checklistItems[index])
+        }
+        await syncIfLive()
+        loadChecklist()
     }
 
     private func addTimeReminder() async {
