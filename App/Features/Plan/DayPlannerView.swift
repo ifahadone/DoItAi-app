@@ -20,18 +20,52 @@ struct DayPlannerView: View {
     @State private var selectedTask: TaskModel?
 
     var body: some View {
-        DayGridView(
-            items: items,
-            titles: Dictionary(tasks.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first }),
-            busy: busyItems,
-            onCreate: { minute in Task { await createBlock(at: minute) } },
-            onMove: { id, start in Task { await move(id, toStart: start) } },
-            onResize: { id, end in Task { await resize(id, toEnd: end) } },
-            onTap: { id in selectedTask = tasks.first { $0.id == id } }
-        )
+        VStack(spacing: 0) {
+            DayGridView(
+                items: items,
+                titles: Dictionary(tasks.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first }),
+                busy: busyItems,
+                onCreate: { minute in Task { await createBlock(at: minute) } },
+                onMove: { id, start in Task { await move(id, toStart: start) } },
+                onResize: { id, end in Task { await resize(id, toEnd: end) } },
+                onTap: { id in selectedTask = tasks.first { $0.id == id } },
+                onDropSchedule: { id, minute in Task { await schedule(id, at: minute) } }
+            )
+            if !unscheduled.isEmpty { tray }
+        }
         .sheet(item: $selectedTask) { task in
             TaskDetailView(task: task).environment(auth).environment(services)
         }
+    }
+
+    /// Bottom tray of unscheduled tasks — drag a chip onto the grid to schedule it (AppSpec §5.3).
+    private var tray: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Drag to schedule")
+                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(unscheduled) { task in
+                        trayChip(task).draggable(task.id) { trayChip(task).opacity(0.9) }
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+        }
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func trayChip(_ task: TaskModel) -> some View {
+        let color = task.listId.flatMap { id in lists.first { $0.id == id }?.colorHex }
+            .flatMap { Color(hex: $0) } ?? .accentColor
+        return Text(task.title)
+            .font(.caption).lineLimit(1)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .foregroundStyle(color)
+            .background(color.opacity(0.16), in: Capsule())
+            .overlay(Capsule().strokeBorder(color.opacity(0.4), lineWidth: 1))
     }
 
     // MARK: - Data
@@ -71,7 +105,23 @@ struct DayPlannerView: View {
         return services.calendar.busyItems(now: services.clock.now())
     }
 
+    /// Open tasks not already on today's grid (no scheduled block, not a due-today item, not done).
+    private var unscheduled: [TaskModel] {
+        let onGrid = Set(items.map(\.id))
+        return tasks
+            .filter { $0.status != .done && !onGrid.contains($0.id) }
+            .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
+    }
+
     // MARK: - Mutations
+
+    /// Schedule a dragged-in task at the drop minute, defaulting to a 60-minute block.
+    private func schedule(_ id: String, at minute: Int) async {
+        guard let task = tasks.first(where: { $0.id == id }) else { return }
+        await mutation.setSchedule(task, start: date(atMinute: minute),
+                                   end: date(atMinute: min(1440, minute + 60)))
+        await syncIfLive()
+    }
 
     private var mutation: TaskMutation {
         TaskMutation(context: modelContext, engine: services.syncEngine,

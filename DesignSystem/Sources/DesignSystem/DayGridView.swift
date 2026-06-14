@@ -15,8 +15,10 @@ public struct DayGridView: View {
     private let onMove: ((String, Int) -> Void)?
     private let onResize: ((String, Int) -> Void)?
     private let onTap: ((String) -> Void)?
+    private let onDropSchedule: ((String, Int) -> Void)?
 
     @State private var drag: DragState?
+    @State private var dropTargeted = false
 
     private struct DragState: Equatable {
         var id: String
@@ -34,7 +36,8 @@ public struct DayGridView: View {
         onCreate: ((Int) -> Void)? = nil,
         onMove: ((String, Int) -> Void)? = nil,
         onResize: ((String, Int) -> Void)? = nil,
-        onTap: ((String) -> Void)? = nil
+        onTap: ((String) -> Void)? = nil,
+        onDropSchedule: ((String, Int) -> Void)? = nil
     ) {
         self.items = items
         self.titles = titles
@@ -44,6 +47,7 @@ public struct DayGridView: View {
         self.onMove = onMove
         self.onResize = onResize
         self.onTap = onTap
+        self.onDropSchedule = onDropSchedule
     }
 
     public var body: some View {
@@ -68,6 +72,18 @@ public struct DayGridView: View {
                     }
                 }
                 .frame(width: geo.size.width, height: grid.totalHeight, alignment: .topLeading)
+                .overlay {
+                    if dropTargeted {
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(theme.colors.accent.opacity(0.6), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                            .allowsHitTesting(false)
+                    }
+                }
+                .dropDestination(for: String.self) { ids, location in
+                    guard let id = ids.first, let onDropSchedule else { return false }
+                    onDropSchedule(id, grid.snap(grid.minute(forY: location.y)))
+                    return true
+                } isTargeted: { dropTargeted = $0 }
             }
             .frame(height: grid.totalHeight)
         }
