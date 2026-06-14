@@ -9,6 +9,7 @@ public struct DayGridView: View {
 
     private let items: [SectographItem]
     private let titles: [String: String]
+    private let busy: [SectographItem]
     private let hourHeight: CGFloat
     private let onCreate: ((Int) -> Void)?
     private let onMove: ((String, Int) -> Void)?
@@ -28,6 +29,7 @@ public struct DayGridView: View {
     public init(
         items: [SectographItem],
         titles: [String: String] = [:],
+        busy: [SectographItem] = [],
         hourHeight: CGFloat = 56,
         onCreate: ((Int) -> Void)? = nil,
         onMove: ((String, Int) -> Void)? = nil,
@@ -36,6 +38,7 @@ public struct DayGridView: View {
     ) {
         self.items = items
         self.titles = titles
+        self.busy = busy
         self.hourHeight = hourHeight
         self.onCreate = onCreate
         self.onMove = onMove
@@ -51,6 +54,7 @@ public struct DayGridView: View {
                 let areaWidth = max(0, geo.size.width - gutter - 8)
                 ZStack(alignment: .topLeading) {
                     hourLines(grid: grid, width: geo.size.width)
+                    busyBands(grid: grid, width: geo.size.width)
                     Color.clear
                         .frame(width: geo.size.width, height: grid.totalHeight)
                         .contentShape(Rectangle())
@@ -66,6 +70,27 @@ public struct DayGridView: View {
                 .frame(width: geo.size.width, height: grid.totalHeight, alignment: .topLeading)
             }
             .frame(height: grid.totalHeight)
+        }
+    }
+
+    /// Calendar free/busy backdrop (P2-5): full-width muted bands behind the task blocks, drawn from
+    /// the same `busy:` source the dial uses. Non-interactive — they don't block tap-to-create.
+    @ViewBuilder
+    private func busyBands(grid: DayGridLayout, width: CGFloat) -> some View {
+        ForEach(busy) { band in
+            let start = max(0, min(1440, band.startMinute))
+            RoundedRectangle(cornerRadius: 6)
+                .fill(theme.colors.separator.opacity(0.16))
+                .overlay(alignment: .topTrailing) {
+                    Text("Busy")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .padding(.horizontal, 6).padding(.top, 2)
+                }
+                .frame(width: max(0, width - gutter - 8),
+                       height: grid.height(forDuration: max(15, band.durationMinutes)),
+                       alignment: .topLeading)
+                .offset(x: gutter + 4, y: grid.y(forMinute: start))
+                .allowsHitTesting(false)
         }
     }
 

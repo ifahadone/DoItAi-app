@@ -23,6 +23,7 @@ struct DayPlannerView: View {
         DayGridView(
             items: items,
             titles: Dictionary(tasks.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first }),
+            busy: busyItems,
             onCreate: { minute in Task { await createBlock(at: minute) } },
             onMove: { id, start in Task { await move(id, toStart: start) } },
             onResize: { id, end in Task { await resize(id, toEnd: end) } },
@@ -54,6 +55,20 @@ struct DayPlannerView: View {
             }
             return nil
         }
+    }
+
+    /// Calendar free/busy backdrop for the grid (P2-5): real EventKit data when authorized, or sample
+    /// blocks under DEBUG `-calendarDemo`. Mirrors `TodayView.busyItems` so the dial + planner agree.
+    private var busyItems: [SectographItem] {
+        #if DEBUG
+        if AppConfig.isCalendarDemo {
+            return [
+                SectographItem(id: "busy:standup", startMinute: 11 * 60, endMinute: 12 * 60),
+                SectographItem(id: "busy:review", startMinute: 14 * 60, endMinute: 15 * 60 + 30),
+            ]
+        }
+        #endif
+        return services.calendar.busyItems(now: services.clock.now())
     }
 
     // MARK: - Mutations
