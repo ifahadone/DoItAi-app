@@ -63,6 +63,18 @@ struct TaskDetailView: View {
                     }
                 }
 
+                Section("Energy") {
+                    Picker("Energy", selection: Binding(
+                        get: { task.energy },
+                        set: { newValue in Task { await mutate { await mutation.setEnergy(task, newValue) } } }
+                    )) {
+                        Text("Any").tag(Energy?.none)
+                        Text("Low").tag(Energy?.some(.low))
+                        Text("Medium").tag(Energy?.some(.med))
+                        Text("High").tag(Energy?.some(.high))
+                    }
+                }
+
                 Section("Schedule") {
                     Toggle("Has due date", isOn: $hasDueDate)
                     if hasDueDate {

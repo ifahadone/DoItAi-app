@@ -46,6 +46,12 @@ struct TaskMutation {
         await patch(task, fields: ["priority": .int(priority.rawValue)]) { $0.priority = priority }
     }
 
+    /// Set/clear the task's energy level (already synced, previously had no UI).
+    func setEnergy(_ task: TaskModel, _ energy: Energy?) async {
+        guard energy != task.energy else { return }
+        await patch(task, fields: ["energy": energy.map { AnyCodable.int($0.rawValue) } ?? .null]) { $0.energy = energy }
+    }
+
     func reschedule(_ task: TaskModel, dueAt: Date?) async {
         guard dueAt != task.dueAt else { return }
         await patch(task, fields: ["dueAt": dueAt.map { AnyCodable.string(Self.iso($0)) } ?? .null]) { $0.dueAt = dueAt }
