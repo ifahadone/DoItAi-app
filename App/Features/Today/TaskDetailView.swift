@@ -82,6 +82,25 @@ struct TaskDetailView: View {
                     }
                 }
 
+                Section {
+                    Picker("Repeat", selection: Binding(
+                        get: { task.recurrence?.freq },
+                        set: { freq in Task { await mutate { await mutation.setRecurrence(task, freq.map { RecurrenceRule(freq: $0) }) } } }
+                    )) {
+                        Text("Never").tag(RecurrenceRule.Freq?.none)
+                        Text("Daily").tag(RecurrenceRule.Freq?.some(.daily))
+                        Text("Weekly").tag(RecurrenceRule.Freq?.some(.weekly))
+                        Text("Monthly").tag(RecurrenceRule.Freq?.some(.monthly))
+                        Text("Yearly").tag(RecurrenceRule.Freq?.some(.yearly))
+                    }
+                } header: {
+                    Text("Repeat")
+                } footer: {
+                    if task.recurrence != nil {
+                        Text("Completing this task creates the next one automatically.")
+                    }
+                }
+
                 Section("Schedule") {
                     Toggle("Has due date", isOn: $hasDueDate)
                     if hasDueDate {

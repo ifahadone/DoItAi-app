@@ -16,7 +16,8 @@ struct TaskMutation {
 
     // MARK: - Field edits
 
-    /// Toggle done ⇄ inbox, stamping/clearing `completedAt`.
+    /// Toggle done ⇄ inbox, stamping/clearing `completedAt`. Completing a recurring task spawns its
+    /// next instance (client-side materialization; the server never expands recurrences).
     func toggleComplete(_ task: TaskModel) async {
         let done = task.status != .done
         let when = clock.now()
@@ -27,6 +28,59 @@ struct TaskMutation {
             t.status = done ? .done : .inbox
             t.completedAt = done ? when : nil
         }
+        if done { await spawnNextRecurrence(of: task, completedAt: when) }
+    }
+
+    /// Set/clear the task's recurrence rule (RFC-5545 subset; synced as a JSON object).
+    func setRecurrence(_ task: TaskModel, _ rule: RecurrenceRule?) async {
+        guard rule != task.recurrence else { return }
+        await patch(task, fields: ["recurrence": rule.map(Self.recurrenceField) ?? .null]) { $0.recurrence = rule }
+    }
+
+    /// Encode a ``RecurrenceRule`` into the wire object the server's RecurrenceRuleSchema accepts.
+    static func recurrenceField(_ rule: RecurrenceRule) -> AnyCodable {
+        var obj: [String: AnyCodable] = ["freq": .string(rule.freq.rawValue), "interval": .int(rule.interval)]
+        if let until = rule.until { obj["until"] = .string(iso(until)) }
+        return .object(obj)
+    }
+
+    /// On completing a recurring task, create the next instance (next due date from the rule), copying
+    /// the carry-over fields and linking it to the series via `recurrenceParentId`.
+    private func spawnNextRecurrence(of task: TaskModel, completedAt: Date) async {
+        guard let rule = task.recurrence else { return }
+        let anchor = task.dueAt ?? task.scheduledStart ?? completedAt
+        guard let next = RecurrenceEngine.nextOccurrence(after: anchor, rule: rule) else { return }
+        let now = clock.now()
+        let id = idGenerator.newID()
+        let clone = TaskModel(
+            id: id, ownerId: task.ownerId, title: task.title,
+            statusRaw: TaskStatus.inbox.rawValue, priorityRaw: task.priorityRaw,
+            createdAt: now, updatedAt: now, serverVersion: 0,
+            syncStateRaw: LocalSyncState.pendingCreate.rawValue)
+        clone.dueAt = next
+        clone.listId = task.listId
+        clone.notes = task.notes
+        clone.energyRaw = task.energyRaw
+        clone.tagIds = task.tagIds
+        clone.recurrence = rule
+        clone.recurrenceParentId = task.recurrenceParentId ?? task.id
+        context.insert(clone)
+        try? context.save()
+
+        var fields: [String: AnyCodable] = [
+            "title": .string(task.title),
+            "status": .int(TaskStatus.inbox.rawValue),
+            "dueAt": .string(Self.iso(next)),
+            "priority": .int(task.priorityRaw),
+            "recurrence": Self.recurrenceField(rule),
+            "recurrenceParentId": .string(task.recurrenceParentId ?? task.id),
+        ]
+        if let listId = task.listId { fields["listId"] = .string(listId) }
+        if !task.tagIds.isEmpty { fields["tagIds"] = .array(task.tagIds.map(AnyCodable.string)) }
+        if let energy = task.energyRaw { fields["energy"] = .int(energy) }
+        if let notes = task.notes, !notes.isEmpty { fields["notes"] = .string(notes) }
+        await engine.enqueue(OutboxOp(opId: idGenerator.newID(), entityType: .task, entityId: id, op: .upsert,
+                                      baseVersion: 0, clientUpdatedAt: now, fields: fields, enqueuedAt: now))
     }
 
     func setTitle(_ task: TaskModel, _ title: String) async {
