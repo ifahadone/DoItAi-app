@@ -31,10 +31,21 @@ struct TaskMutation {
         if done { await spawnNextRecurrence(of: task, completedAt: when) }
     }
 
-    /// Set/clear the task's recurrence rule (RFC-5545 subset; synced as a JSON object).
+    /// Set/clear the task's recurrence rule (RFC-5545 subset; synced as a JSON object). Changing the
+    /// rule here governs this occurrence and all future ones (they're spawned from it) — the "all
+    /// future" arm of FR-RECUR-060.
     func setRecurrence(_ task: TaskModel, _ rule: RecurrenceRule?) async {
         guard rule != task.recurrence else { return }
         await patch(task, fields: ["recurrence": rule.map(Self.recurrenceField) ?? .null]) { $0.recurrence = rule }
+    }
+
+    /// "Edit this event only" (FR-RECUR-060): keep the series going by spawning the next occurrence
+    /// from the current rule, then detach THIS instance (clear its recurrence) so edits to it no longer
+    /// affect the series. No-op for a non-recurring task.
+    func detachKeepingSeries(_ task: TaskModel) async {
+        guard task.recurrence != nil else { return }
+        await spawnNextRecurrence(of: task, completedAt: clock.now())
+        await setRecurrence(task, nil)
     }
 
     /// Encode a ``RecurrenceRule`` into the wire object the server's RecurrenceRuleSchema accepts —

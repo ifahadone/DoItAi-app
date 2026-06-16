@@ -110,11 +110,16 @@ struct TaskDetailView: View {
                         Text("Monthly").tag(RecurrenceRule.Freq?.some(.monthly))
                         Text("Yearly").tag(RecurrenceRule.Freq?.some(.yearly))
                     }
+                    if task.recurrence != nil {
+                        Button("Edit this event only") {
+                            Task { await mutate { await mutation.detachKeepingSeries(task) } }
+                        }
+                    }
                 } header: {
                     Text("Repeat")
                 } footer: {
                     if task.recurrence != nil {
-                        Text("Completing this task creates the next one automatically.")
+                        Text("Completing this task creates the next one automatically. Changing Repeat applies to this and all future occurrences; “Edit this event only” detaches this one and keeps the series going.")
                     }
                 }
 
