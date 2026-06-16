@@ -82,6 +82,23 @@ struct TaskDetailView: View {
                     }
                 }
 
+                Section("Estimate") {
+                    Picker("Estimated duration", selection: Binding(
+                        get: { task.estimatedMinutes },
+                        set: { newValue in Task { await mutate { await mutation.setEstimatedMinutes(task, newValue) } } }
+                    )) {
+                        Text("None").tag(Int?.none)
+                        Text("15m").tag(Int?.some(15))
+                        Text("30m").tag(Int?.some(30))
+                        Text("45m").tag(Int?.some(45))
+                        Text("1h").tag(Int?.some(60))
+                        Text("1h 30m").tag(Int?.some(90))
+                        Text("2h").tag(Int?.some(120))
+                        Text("3h").tag(Int?.some(180))
+                        Text("4h").tag(Int?.some(240))
+                    }
+                }
+
                 Section {
                     Picker("Repeat", selection: Binding(
                         get: { task.recurrence?.freq },

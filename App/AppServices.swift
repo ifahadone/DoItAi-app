@@ -124,6 +124,7 @@ final class AppServices {
             if parsed.priority != .none { await mut.setPriority(task, parsed.priority) }
             if let due = parsed.dueAt { await mut.reschedule(task, dueAt: due) }
             if !tagIds.isEmpty { await mut.setTags(task, tagIds: tagIds) }
+            if let est = parsed.estimatedMinutes { await mut.setEstimatedMinutes(task, est) }
         }
         return id
     }

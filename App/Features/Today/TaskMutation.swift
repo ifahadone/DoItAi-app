@@ -37,9 +37,14 @@ struct TaskMutation {
         await patch(task, fields: ["recurrence": rule.map(Self.recurrenceField) ?? .null]) { $0.recurrence = rule }
     }
 
-    /// Encode a ``RecurrenceRule`` into the wire object the server's RecurrenceRuleSchema accepts.
+    /// Encode a ``RecurrenceRule`` into the wire object the server's RecurrenceRuleSchema accepts —
+    /// including the `byWeekday` / `byMonthDay` / `count` refinements so they round-trip + sync
+    /// (FR-RECUR-050).
     static func recurrenceField(_ rule: RecurrenceRule) -> AnyCodable {
         var obj: [String: AnyCodable] = ["freq": .string(rule.freq.rawValue), "interval": .int(rule.interval)]
+        if let wd = rule.byWeekday, !wd.isEmpty { obj["byWeekday"] = .array(wd.map(AnyCodable.int)) }
+        if let md = rule.byMonthDay, !md.isEmpty { obj["byMonthDay"] = .array(md.map(AnyCodable.int)) }
+        if let count = rule.count { obj["count"] = .int(count) }
         if let until = rule.until { obj["until"] = .string(iso(until)) }
         return .object(obj)
     }
@@ -49,7 +54,12 @@ struct TaskMutation {
     private func spawnNextRecurrence(of task: TaskModel, completedAt: Date) async {
         guard let rule = task.recurrence else { return }
         let anchor = task.dueAt ?? task.scheduledStart ?? completedAt
-        guard let next = RecurrenceEngine.nextOccurrence(after: anchor, rule: rule) else { return }
+        // Count existing instances in the series so a `count`-bounded rule stops (FR-RECUR-050).
+        let seriesId = task.recurrenceParentId ?? task.id
+        let madeSoFar = (try? context.fetch(
+            FetchDescriptor<TaskModel>(predicate: #Predicate { $0.recurrenceParentId == seriesId || $0.id == seriesId })
+        ).count) ?? 1
+        guard let next = RecurrenceEngine.nextOccurrence(after: anchor, rule: rule, occurrencesSoFar: madeSoFar) else { return }
         let now = clock.now()
         let id = idGenerator.newID()
         let clone = TaskModel(
@@ -109,6 +119,12 @@ struct TaskMutation {
     func reschedule(_ task: TaskModel, dueAt: Date?) async {
         guard dueAt != task.dueAt else { return }
         await patch(task, fields: ["dueAt": dueAt.map { AnyCodable.string(Self.iso($0)) } ?? .null]) { $0.dueAt = dueAt }
+    }
+
+    /// Set/clear the task's estimated duration in minutes (FR-TASK-140 / FR-QADD-090).
+    func setEstimatedMinutes(_ task: TaskModel, _ minutes: Int?) async {
+        guard minutes != task.estimatedMinutes else { return }
+        await patch(task, fields: ["estimatedMinutes": minutes.map { AnyCodable.int($0) } ?? .null]) { $0.estimatedMinutes = minutes }
     }
 
     /// Add focus-timer minutes to the task's logged `actualMinutes` (P2-4).

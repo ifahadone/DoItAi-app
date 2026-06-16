@@ -6,12 +6,17 @@ public struct ParsedQuickAdd: Equatable, Sendable {
     public var dueAt: Date?
     public var tagNames: [String]
     public var priority: Priority
+    /// Estimated duration in minutes, parsed from a trailing duration phrase ("1h", "90m", "1h30m",
+    /// "for 45 min") — nil when none is present (FR-QADD-090).
+    public var estimatedMinutes: Int?
 
-    public init(title: String, dueAt: Date? = nil, tagNames: [String] = [], priority: Priority = .none) {
+    public init(title: String, dueAt: Date? = nil, tagNames: [String] = [], priority: Priority = .none,
+                estimatedMinutes: Int? = nil) {
         self.title = title
         self.dueAt = dueAt
         self.tagNames = tagNames
         self.priority = priority
+        self.estimatedMinutes = estimatedMinutes
     }
 }
 
@@ -47,11 +52,41 @@ public enum QuickAddParser {
             }
         }
 
+        // Duration → estimatedMinutes, parsed AFTER date detection so a relative due phrase like
+        // "in 2 hours" is consumed as a due date by NSDataDetector and only a leftover bare duration
+        // ("1h", "30m", "for 45 min") is read as an estimate (FR-QADD-090).
+        let estimatedMinutes = parseDuration(in: text)
+
         let title = (text as String)
+            .replacingOccurrences(of: "\\bfor\\b\\s*$", with: "", options: [.regularExpression, .caseInsensitive])
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        return ParsedQuickAdd(title: title, dueAt: dueAt, tagNames: tagNames, priority: priority)
+        return ParsedQuickAdd(title: title, dueAt: dueAt, tagNames: tagNames, priority: priority,
+                              estimatedMinutes: estimatedMinutes)
+    }
+
+    /// Find and strip the first duration phrase, returning total minutes. Prefers an hours(+minutes)
+    /// form ("1h", "1 hr", "2 hours", "1h30m") and falls back to a minutes-only form ("30m", "45 min").
+    private static func parseDuration(in text: NSMutableString) -> Int? {
+        let ns = text as NSString
+        let hourMin = "\\b(\\d{1,2})\\s*(?:h|hr|hrs|hour|hours)(?:\\s*(\\d{1,2})\\s*(?:m|min|mins|minute|minutes))?\\b"
+        if let re = try? NSRegularExpression(pattern: hourMin, options: .caseInsensitive),
+           let m = re.firstMatch(in: text as String, range: NSRange(location: 0, length: text.length)) {
+            let hours = Int(ns.substring(with: m.range(at: 1))) ?? 0
+            var total = hours * 60
+            if m.range(at: 2).location != NSNotFound { total += Int(ns.substring(with: m.range(at: 2))) ?? 0 }
+            text.replaceCharacters(in: m.range, with: " ")
+            return total > 0 ? total : nil
+        }
+        let minOnly = "\\b(\\d{1,3})\\s*(?:m|min|mins|minute|minutes)\\b"
+        if let re = try? NSRegularExpression(pattern: minOnly, options: .caseInsensitive),
+           let m = re.firstMatch(in: text as String, range: NSRange(location: 0, length: text.length)) {
+            let mins = Int((text as NSString).substring(with: m.range(at: 1))) ?? 0
+            text.replaceCharacters(in: m.range, with: " ")
+            return mins > 0 ? mins : nil
+        }
+        return nil
     }
 
     /// Remove every match of `pattern` from `text` (back-to-front so ranges stay valid), passing each

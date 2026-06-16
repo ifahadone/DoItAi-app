@@ -49,4 +49,28 @@ final class QuickAddParserTests: XCTestCase {
         XCTAssertNotNil(r.dueAt)                  // relative date resolves off the system clock
         XCTAssertEqual(r.title, "Lunch with Sam") // tokens + date phrase stripped
     }
+
+    // MARK: - FR-QADD-090: duration -> estimatedMinutes
+
+    func testDurationHoursParsed() {
+        let r = QuickAddParser.parse("Design review 1h")
+        XCTAssertEqual(r.title, "Design review")
+        XCTAssertEqual(r.estimatedMinutes, 60)
+    }
+
+    func testDurationHoursAndMinutes() {
+        XCTAssertEqual(QuickAddParser.parse("Workshop 1h30m").estimatedMinutes, 90)
+        XCTAssertEqual(QuickAddParser.parse("Standup for 15 min").estimatedMinutes, 15)
+        XCTAssertEqual(QuickAddParser.parse("Deep work 2 hours").estimatedMinutes, 120)
+    }
+
+    func testDurationMinutesOnly() {
+        let r = QuickAddParser.parse("Call Sam 30m")
+        XCTAssertEqual(r.title, "Call Sam")
+        XCTAssertEqual(r.estimatedMinutes, 30)
+    }
+
+    func testNoDurationIsNil() {
+        XCTAssertNil(QuickAddParser.parse("Buy milk").estimatedMinutes)
+    }
 }
