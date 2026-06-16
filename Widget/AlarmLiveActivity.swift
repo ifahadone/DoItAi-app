@@ -1,69 +1,95 @@
-// Alarm Live Activity (AppSpec §5.6, DevelopmentPlan P3-6).
+// Routine / alarm-chain Live Activity (AppSpec §5.6, DevelopmentPlan P3-6).
 //
 // REFERENCE CODE — not yet compiled. Like FocusLiveActivity, this needs ActivityKit + a widget
 // extension target + `NSSupportsLiveActivities` in Info.plist + signing + a device.
 //
 // iOS reality: a third-party app can't ring a true system alarm over silent/Focus the way Clock does.
-// DoIT delivers alarms as Time-Sensitive notifications (see App/Features/Alarms/AlarmScheduler.swift)
-// and, when `usesLiveActivity` is set, shows this lock-screen countdown so the next alarm stays glance-
-// able. To wire it: move `AlarmActivityAttributes` into a shared framework and have `AlarmScheduler`
-// `Activity.request(...)` it for the soonest alarm; `.end(...)` it when the alarm fires or is canceled.
+// DoIT delivers a routine's per-step alarms as Time-Sensitive notifications (see
+// App/Features/Alarms/AlarmScheduler.swift); when the routine is running this Live Activity tracks the
+// chain — the current step, progress through the steps, and a live countdown to the next step — so the
+// flow stays glanceable on the lock screen + Dynamic Island. To wire it: move `RoutineActivityAttributes`
+// into a shared framework and have the materializer/`AlarmScheduler` `Activity.request/update/end` it as
+// the chain advances.
 
 import ActivityKit
 import WidgetKit
 import SwiftUI
 
-/// The pending-alarm Live Activity payload. `fireAtEpoch` drives the system `.timer` countdown without
-/// per-second app updates; mirrors `AlarmModel.fireAt`.
-public struct AlarmActivityAttributes: ActivityAttributes {
+/// The running-routine Live Activity payload. `nextStepAtEpoch` drives the system `.timer` countdown to
+/// the next step without per-second app updates; `stepIndex`/`stepCount` drive the progress bar.
+public struct RoutineActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
-        public var fireAtEpoch: Double
+        public var stepTitle: String
+        public var stepIndex: Int       // 1-based
+        public var stepCount: Int
+        public var nextStepAtEpoch: Double?
 
-        public init(fireAtEpoch: Double) {
-            self.fireAtEpoch = fireAtEpoch
+        public init(stepTitle: String, stepIndex: Int, stepCount: Int, nextStepAtEpoch: Double?) {
+            self.stepTitle = stepTitle
+            self.stepIndex = stepIndex
+            self.stepCount = stepCount
+            self.nextStepAtEpoch = nextStepAtEpoch
         }
     }
 
-    public var alarmTitle: String
-    public var alarmId: String
+    public var routineTitle: String
+    public var routineId: String
 
-    public init(alarmTitle: String, alarmId: String) {
-        self.alarmTitle = alarmTitle
-        self.alarmId = alarmId
+    public init(routineTitle: String, routineId: String) {
+        self.routineTitle = routineTitle
+        self.routineId = routineId
     }
 }
 
-struct AlarmLiveActivity: Widget {
+struct RoutineLiveActivity: Widget {
     var body: some WidgetConfiguration {
-        ActivityConfiguration(for: AlarmActivityAttributes.self) { context in
-            HStack(spacing: 10) {
-                Image(systemName: "alarm.fill").foregroundStyle(.tint)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(context.attributes.alarmTitle).font(.headline).lineLimit(1)
-                    countdown(context.state).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+        ActivityConfiguration(for: RoutineActivityAttributes.self) { context in
+            HStack(spacing: 12) {
+                Image(systemName: "checklist").foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(context.state.stepTitle).font(.headline).lineLimit(1)
+                        Text("step \(context.state.stepIndex) of \(context.state.stepCount)")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    progress(context.state)
                 }
                 Spacer()
+                countdown(context.state).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
             }
             .padding()
             .activityBackgroundTint(.clear)
         } dynamicIsland: { context in
             DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) { Image(systemName: "alarm.fill") }
-                DynamicIslandExpandedRegion(.center) { Text(context.attributes.alarmTitle).lineLimit(1) }
-                DynamicIslandExpandedRegion(.bottom) { countdown(context.state).font(.title2.monospacedDigit()) }
+                DynamicIslandExpandedRegion(.leading) { Image(systemName: "checklist").foregroundStyle(.tint) }
+                DynamicIslandExpandedRegion(.trailing) { countdown(context.state).font(.title3.monospacedDigit()) }
+                DynamicIslandExpandedRegion(.center) {
+                    Text(context.state.stepTitle).font(.headline).lineLimit(1)
+                }
+                DynamicIslandExpandedRegion(.bottom) { progress(context.state) }
             } compactLeading: {
-                Image(systemName: "alarm.fill")
+                Image(systemName: "checklist")
             } compactTrailing: {
-                countdown(context.state).monospacedDigit()
+                countdown(context.state).monospacedDigit().frame(maxWidth: 56)
             } minimal: {
-                Image(systemName: "alarm.fill")
+                Image(systemName: "checklist")
             }
+            .keylineTint(.teal)
         }
     }
 
-    /// Live-updating countdown to the alarm. `.timer` with a future date counts *down* automatically.
     @ViewBuilder
-    private func countdown(_ state: AlarmActivityAttributes.ContentState) -> some View {
-        Text(Date(timeIntervalSince1970: state.fireAtEpoch), style: .timer)
+    private func progress(_ state: RoutineActivityAttributes.ContentState) -> some View {
+        ProgressView(value: Double(state.stepIndex), total: Double(max(1, state.stepCount))).tint(.teal)
+    }
+
+    /// Live countdown to the next step (`.timer` with a future date counts down automatically).
+    @ViewBuilder
+    private func countdown(_ state: RoutineActivityAttributes.ContentState) -> some View {
+        if let next = state.nextStepAtEpoch {
+            Text(Date(timeIntervalSince1970: next), style: .timer)
+        } else {
+            Text("Last step")
+        }
     }
 }

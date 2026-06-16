@@ -1,6 +1,9 @@
 import Foundation
 import SwiftData
 import SyncCore
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 /// The app's dependency-injection container (AppSpec §7 "DI container").
 ///
@@ -143,6 +146,10 @@ final class AppServices {
             let c = calendar.dateComponents([.hour, .minute], from: date)
             return (c.hour ?? 0) * 60 + (c.minute ?? 0)
         }
+        let lists = (try? ctx.fetch(FetchDescriptor<TaskListModel>(predicate: #Predicate { $0.deletedAt == nil }))) ?? []
+        let habits = (try? ctx.fetch(FetchDescriptor<RoutineModel>(predicate: #Predicate { $0.deletedAt == nil && $0.isHabit }))) ?? []
+        func color(_ listId: String?) -> String? { listId.flatMap { id in lists.first { $0.id == id }?.colorHex } }
+
         let items: [AgendaItem] = tasks.compactMap { task in
             let bucket = SmartListClassifier.classify(status: task.status, dueAt: task.dueAt,
                                                       scheduledStart: task.scheduledStart, now: now)
@@ -150,11 +157,32 @@ final class AppServices {
             let dueText = task.dueAt.map { $0.formatted(date: .omitted, time: .shortened) }
             return AgendaItem(taskId: task.id, title: task.title, dueText: dueText,
                               isDone: task.status == .done, priorityLevel: task.priority.rawValue,
-                              startMinute: minute(task.scheduledStart), endMinute: minute(task.scheduledEnd))
+                              startMinute: minute(task.scheduledStart), endMinute: minute(task.scheduledEnd),
+                              colorHex: color(task.listId))
         }
-        let snapshot = AgendaSnapshot(items: items, generatedAtEpoch: now.timeIntervalSince1970)
+
+        // Today's progress + focus stat (tasks scheduled or due today).
+        let todayTasks = tasks.filter { t in
+            (t.scheduledStart.map { calendar.isDate($0, inSameDayAs: now) } ?? false)
+                || (t.dueAt.map { calendar.isDate($0, inSameDayAs: now) } ?? false)
+        }
+        let completedToday = todayTasks.filter { $0.status == .done }.count
+        let focusMinutesToday = todayTasks.reduce(0) { $0 + ($1.actualMinutes ?? 0) }
+
+        // Highest-streak habit, with its last-7-days completion bits for the Streak widget heatmap.
+        let topHabit: HabitSummary? = habits.max(by: { $0.streakCurrent < $1.streakCurrent }).map { habit in
+            let recent = HabitHeatmap.days(completions: Set(habit.completions), days: 7, today: now).map(\.completed)
+            return HabitSummary(name: habit.name, streakCurrent: habit.streakCurrent, recent: recent)
+        }
+
+        let snapshot = AgendaSnapshot(items: items, generatedAtEpoch: now.timeIntervalSince1970,
+                                      completedToday: completedToday, totalToday: todayTasks.count,
+                                      focusMinutesToday: focusMinutesToday, topHabit: topHabit)
         let defaults = UserDefaults(suiteName: AppConfig.appGroupIdentifier) ?? .standard
         AgendaSnapshotStore.save(snapshot, to: defaults)
+        #if canImport(WidgetKit)
+        WidgetCenter.shared.reloadAllTimelines() // nudge widgets to pick up the fresh snapshot
+        #endif
     }
 
     /// Build the notification plan from local reminder records (resolving task titles for the body)
