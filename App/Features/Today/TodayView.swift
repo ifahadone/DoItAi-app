@@ -81,6 +81,7 @@ struct TodayView: View {
                             .padding(.top, theme.spacing.sm)
                             .padding(.horizontal, theme.spacing.xl)
                         }
+                        nextUpCard
                         taskList
                     }
                 }
@@ -163,6 +164,67 @@ struct TodayView: View {
         if let before = filter.dueBefore, let due = task.dueAt, due > before { return false }
         if let after = filter.dueAfter, let due = task.dueAt, due < after { return false }
         return true
+    }
+
+    /// Today's tasks projected for the "now → next" agenda card (FR-TODAY-110).
+    private var agendaSlots: [AgendaSlotItem] {
+        let cal = Calendar.current
+        let now = services.clock.now()
+        return tasks.compactMap { t in
+            guard t.status != .done else { return nil }
+            if let s = t.scheduledStart, cal.isDate(s, inSameDayAs: now) {
+                return AgendaSlotItem(id: t.id, title: t.title, start: s, end: t.scheduledEnd, due: t.dueAt)
+            } else if let d = t.dueAt, cal.isDate(d, inSameDayAs: now) {
+                return AgendaSlotItem(id: t.id, title: t.title, due: d)
+            }
+            return nil
+        }
+    }
+
+    /// "Now → next" agenda card: the block happening now (with minutes left) + the soonest upcoming
+    /// item. Updates each minute via TimelineView; hidden when there's nothing current or upcoming.
+    @ViewBuilder
+    private var nextUpCard: some View {
+        TimelineView(.periodic(from: Date(), by: 60)) { _ in
+            let now = services.clock.now()
+            let result = NextUpPlanner.compute(agendaSlots, now: now)
+            if result.current != nil || result.next != nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let cur = result.current {
+                        HStack(spacing: 6) {
+                            Circle().fill(theme.colors.accent).frame(width: 7, height: 7)
+                            Text("NOW").font(.caption2.weight(.bold)).foregroundStyle(theme.colors.accent)
+                            Text(cur.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                            Spacer()
+                            if let m = NextUpPlanner.minutesLeft(in: cur, now: now) {
+                                Text("\(m)m left").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                            }
+                        }
+                    }
+                    if let nxt = result.next {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.turn.down.right").font(.caption2).foregroundStyle(.secondary)
+                            Text("Next").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                            Text(nxt.title).font(.subheadline).lineLimit(1)
+                            Spacer()
+                            if let a = nxt.anchor {
+                                Text(a.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                .padding(12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.colors.separator.opacity(0.4)))
+                .padding(.horizontal, theme.spacing.xl)
+                .padding(.bottom, theme.spacing.sm)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if let id = (result.current ?? result.next)?.id { selectedTask = tasks.first { $0.id == id } }
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
     }
 
     private var taskList: some View {
