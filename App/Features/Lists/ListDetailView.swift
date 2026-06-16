@@ -20,6 +20,9 @@ struct ListDetailView: View {
     @State private var newTitle = ""
     @State private var showSharing = false
     @State private var showPaywall = false
+    /// Multi-select for bulk edit in edit mode (FR-TASK-170).
+    @State private var selection = Set<String>()
+    @Environment(\.editMode) private var editMode
 
     /// Tasks in this list, ordered by manual `rank` (then newest-first as a tiebreak) so drag-to-reorder
     /// sticks (FR-TASK-150).
@@ -32,7 +35,7 @@ struct ListDetailView: View {
     }
 
     var body: some View {
-        List {
+        List(selection: $selection) {
             if tasksInList.isEmpty {
                 Text("No tasks in this list yet — tap + to add one.")
                     .font(.subheadline).foregroundStyle(.secondary)
@@ -46,7 +49,7 @@ struct ListDetailView: View {
                     onToggle: { Task { await toggle(task) } }
                 )
                 .contentShape(Rectangle())
-                .onTapGesture { selectedTask = task }
+                .onTapGesture { if editMode?.wrappedValue.isEditing != true { selectedTask = task } }
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) { Task { await delete(task) } } label: {
                         Label("Delete", systemImage: "trash")
@@ -69,6 +72,24 @@ struct ListDetailView: View {
                     if services.entitlements.isPro { showSharing = true } else { showPaywall = true }
                 } label: { Image(systemName: "person.crop.circle.badge.plus") }
                     .accessibilityLabel("Share list")
+            }
+            // Bulk-edit bar: appears in edit mode once rows are selected (FR-TASK-170).
+            if editMode?.wrappedValue.isEditing == true && !selection.isEmpty {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Button { Task { await bulkComplete() } } label: { Label("Complete", systemImage: "checkmark.circle") }
+                    Spacer()
+                    Menu {
+                        ForEach(ReschedulePreset.allCases.filter { $0.date(from: services.clock.now()) != nil }) { preset in
+                            Button { Task { await bulkReschedule(preset) } } label: {
+                                Label(preset.label, systemImage: preset.systemImage)
+                            }
+                        }
+                    } label: { Label("Reschedule", systemImage: "calendar.badge.clock") }
+                    Spacer()
+                    Button { Task { await bulkArchive() } } label: { Label("Archive", systemImage: "archivebox") }
+                    Spacer()
+                    Button(role: .destructive) { Task { await bulkDelete() } } label: { Label("Delete", systemImage: "trash") }
+                }
             }
         }
         .alert("New Task", isPresented: $isCreating) {
@@ -100,6 +121,28 @@ struct ListDetailView: View {
 
     private func toggle(_ task: TaskModel) async { await mutation.toggleComplete(task); await syncIfLive() }
     private func delete(_ task: TaskModel) async { await mutation.delete(task); await syncIfLive() }
+
+    // MARK: - Bulk edit (FR-TASK-170)
+
+    private var selectedTasks: [TaskModel] { tasksInList.filter { selection.contains($0.id) } }
+
+    private func bulkComplete() async {
+        for task in selectedTasks where task.status != .done { await mutation.toggleComplete(task) }
+        selection.removeAll(); await syncIfLive()
+    }
+    private func bulkArchive() async {
+        for task in selectedTasks { await mutation.setArchived(task, true) }
+        selection.removeAll(); await syncIfLive()
+    }
+    private func bulkDelete() async {
+        for task in selectedTasks { await mutation.delete(task) }
+        selection.removeAll(); await syncIfLive()
+    }
+    private func bulkReschedule(_ preset: ReschedulePreset) async {
+        guard let date = preset.date(from: services.clock.now()) else { return }
+        for task in selectedTasks { await mutation.reschedule(task, dueAt: date) }
+        selection.removeAll(); await syncIfLive()
+    }
 
     /// Drag-to-reorder: reassign each task's `rank` to its new index (FR-TASK-150).
     private func move(from source: IndexSet, to destination: Int) {
