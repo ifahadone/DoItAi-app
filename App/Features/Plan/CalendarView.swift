@@ -191,17 +191,20 @@ struct CalendarView: View {
 
     private var dayView: some View {
         VStack(spacing: 0) {
-            DayGridView(
-                items: dayItems(selectedDate),
-                titles: titles(for: selectedDate),
-                busy: busyItems(for: selectedDate),
-                onCreate: { minute in Task { await createBlock(at: minute, on: selectedDate) } },
-                onMove: { id, start in Task { await move(id, toStart: start, on: selectedDate) } },
-                onResize: { id, end in Task { await resize(id, toEnd: end, on: selectedDate) } },
-                onTap: { id in selectedTask = tasks.first { $0.id == id } },
-                onDropSchedule: { id, minute in Task { await schedule(id, at: minute, on: selectedDate) } },
-                nowMinute: cal.isDate(selectedDate, inSameDayAs: today) ? currentMinute() : nil
-            )
+            // TimelineView ticks each minute so the red now-line advances live (Apple-Calendar style).
+            TimelineView(.periodic(from: Date(), by: 60)) { _ in
+                DayGridView(
+                    items: dayItems(selectedDate),
+                    titles: titles(for: selectedDate),
+                    busy: busyItems(for: selectedDate),
+                    onCreate: { minute in Task { await createBlock(at: minute, on: selectedDate) } },
+                    onMove: { id, start in Task { await move(id, toStart: start, on: selectedDate) } },
+                    onResize: { id, end in Task { await resize(id, toEnd: end, on: selectedDate) } },
+                    onTap: { id in selectedTask = tasks.first { $0.id == id } },
+                    onDropSchedule: { id, minute in Task { await schedule(id, at: minute, on: selectedDate) } },
+                    nowMinute: cal.isDate(selectedDate, inSameDayAs: today) ? currentMinute() : nil
+                )
+            }
             if !unscheduled.isEmpty { tray }
         }
     }
@@ -299,9 +302,12 @@ struct CalendarView: View {
                         .onTapGesture { selectedTask = tasks.first { $0.id == item.id } }
                 }
                 if isToday {
-                    let ny = grid.y(forMinute: currentMinute())
-                    Path { p in p.move(to: CGPoint(x: 0, y: ny)); p.addLine(to: CGPoint(x: geo.size.width, y: ny)) }
-                        .stroke(Color.red, lineWidth: 1).allowsHitTesting(false)
+                    TimelineView(.periodic(from: Date(), by: 60)) { _ in
+                        let ny = grid.y(forMinute: currentMinute())
+                        Path { p in p.move(to: CGPoint(x: 0, y: ny)); p.addLine(to: CGPoint(x: geo.size.width, y: ny)) }
+                            .stroke(Color.red, lineWidth: 1)
+                    }
+                    .allowsHitTesting(false)
                 }
             }
             .frame(height: grid.totalHeight)
@@ -427,9 +433,9 @@ struct CalendarView: View {
     // MARK: - Unscheduled tray (day view)
 
     private var unscheduled: [TaskModel] {
-        let onGrid = Set(dayItems(selectedDate).map(\.id))
-        return tasks
-            .filter { $0.status != .done && !onGrid.contains($0.id) }
+        // Truly unscheduled (no time block), so the tray is stable regardless of which day is selected.
+        tasks
+            .filter { $0.status != .done && $0.scheduledStart == nil }
             .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
     }
 
