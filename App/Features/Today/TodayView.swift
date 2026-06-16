@@ -194,8 +194,37 @@ struct TodayView: View {
                     }
                     .tint(task.status == .done ? .gray : .green)
                 }
+                .contextMenu { rowContextMenu(task) } // long-press quick actions (FR-TASK-190)
             }
         }
+    }
+
+    /// Long-press context menu for a task row: complete, reschedule presets, open, delete (FR-TASK-190).
+    @ViewBuilder
+    private func rowContextMenu(_ task: TaskModel) -> some View {
+        Button { Task { await toggleComplete(task) } } label: {
+            Label(task.status == .done ? "Reopen" : "Mark done",
+                  systemImage: task.status == .done ? "arrow.uturn.left" : "checkmark.circle")
+        }
+        Menu {
+            ForEach(ReschedulePreset.allCases.filter { $0.date(from: services.clock.now()) != nil }) { preset in
+                Button { Task { await reschedule(task, preset: preset) } } label: {
+                    Label(preset.label, systemImage: preset.systemImage)
+                }
+            }
+        } label: { Label("Reschedule", systemImage: "calendar.badge.clock") }
+        Button { selectedTask = task } label: { Label("Open", systemImage: "info.circle") }
+        Divider()
+        Button(role: .destructive) { Task { await delete(task) } } label: {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+
+    /// Apply a one-tap reschedule preset to a task's due date (FR-TASK-160).
+    private func reschedule(_ task: TaskModel, preset: ReschedulePreset) async {
+        guard let date = preset.date(from: services.clock.now()) else { return }
+        await mutation.reschedule(task, dueAt: date)
+        if AppConfig.isLiveSync { await services.syncOnce() }
     }
 
     private var emptyState: some View {
