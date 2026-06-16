@@ -153,6 +153,11 @@ struct TaskDetailView: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .swipeActions(edge: .leading) {
+                            Button { Task { await promoteToSubtask(item) } } label: {
+                                Label("To subtask", systemImage: "arrow.up.forward.square")
+                            }.tint(.blue)
+                        }
                     }
                     .onDelete { offsets in Task { await deleteChecklist(at: offsets) } }
 
@@ -316,6 +321,22 @@ struct TaskDetailView: View {
 
     private func toggleChecklist(_ item: ChecklistItemModel) async {
         await checklistMutation.toggle(item)
+        await syncIfLive()
+        loadChecklist()
+    }
+
+    /// Promote a checklist item into a first-class schedulable subtask (parentTaskId = this task),
+    /// then remove the checklist item (FR-SUB-060).
+    private func promoteToSubtask(_ item: ChecklistItemModel) async {
+        let creator = TaskCreation(context: modelContext, engine: services.syncEngine,
+                                   ownerId: task.ownerId, clock: services.clock, idGenerator: services.idGenerator)
+        let id = await creator.createTask(title: item.text)
+        var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        if let sub = try? modelContext.fetch(descriptor).first {
+            await mutation.setParent(sub, task.id)
+        }
+        await checklistMutation.delete(item)
         await syncIfLive()
         loadChecklist()
     }

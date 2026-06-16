@@ -176,6 +176,12 @@ struct TaskMutation {
         }
     }
 
+    /// Set/clear the task's parent (subtask relationship; FR-SUB-060). Writable `parentTaskId` column.
+    func setParent(_ task: TaskModel, _ parentId: String?) async {
+        guard parentId != task.parentTaskId else { return }
+        await patch(task, fields: ["parentTaskId": parentId.map(AnyCodable.string) ?? .null]) { $0.parentTaskId = parentId }
+    }
+
     func assign(_ task: TaskModel, toListId listId: String?) async {
         guard listId != task.listId else { return }
         await patch(task, fields: ["listId": listId.map(AnyCodable.string) ?? .null]) { $0.listId = listId }

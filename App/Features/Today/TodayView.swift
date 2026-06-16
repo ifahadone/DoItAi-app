@@ -156,7 +156,14 @@ struct TodayView: View {
 
     private func matchesSearch(_ task: TaskModel) -> Bool {
         guard let filter = aiFilter else {
-            return searchText.isEmpty || task.title.localizedCaseInsensitiveContains(searchText)
+            // Plain-text search spans title, notes, tag names, and the list name (FR-SRCH-060).
+            if searchText.isEmpty { return true }
+            let q = searchText
+            if task.title.localizedCaseInsensitiveContains(q) { return true }
+            if let notes = task.notes, notes.localizedCaseInsensitiveContains(q) { return true }
+            if tagNames(for: task).contains(where: { $0.localizedCaseInsensitiveContains(q) }) { return true }
+            if let name = list(for: task)?.name, name.localizedCaseInsensitiveContains(q) { return true }
+            return false
         }
         if !filter.includeCompleted && task.status == .done { return false }
         if let text = filter.text, !text.isEmpty, !task.title.localizedCaseInsensitiveContains(text) { return false }
