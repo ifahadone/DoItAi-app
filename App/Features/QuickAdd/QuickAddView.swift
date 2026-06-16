@@ -14,14 +14,26 @@ struct QuickAddView: View {
     @State private var input = ""
     @State private var parsed = ParsedQuickAdd(title: "")
     @State private var aiBusy = false
+    /// Live voice dictation into the NL field (FR-QADD-080).
+    @State private var dictation = SpeechDictation()
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("e.g. Lunch with Sam tomorrow 1pm #work !p1", text: $input, axis: .vertical)
-                        .lineLimit(1...3)
-                        .onChange(of: input) { _, newValue in parsed = QuickAddParser.parse(newValue) }
+                    HStack(alignment: .top, spacing: 8) {
+                        TextField("e.g. Lunch with Sam tomorrow 1pm #work !p1", text: $input, axis: .vertical)
+                            .lineLimit(1...3)
+                            .onChange(of: input) { _, newValue in parsed = QuickAddParser.parse(newValue) }
+                        if dictation.isAvailable {
+                            Button { dictation.toggle() } label: {
+                                Image(systemName: dictation.isRecording ? "mic.fill" : "mic")
+                                    .foregroundStyle(dictation.isRecording ? Color.red : Color.accentColor)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate task")
+                        }
+                    }
                     if services.aiConsentEnabled {
                         Button {
                             Task { aiBusy = true; parsed = await services.aiParseOrLocal(input); aiBusy = false }
@@ -57,6 +69,12 @@ struct QuickAddView: View {
             }
             .navigationTitle("Quick Add")
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: dictation.transcript) { _, newValue in
+                guard !newValue.isEmpty else { return }
+                input = newValue
+                parsed = QuickAddParser.parse(newValue)
+            }
+            .onDisappear { dictation.stop() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") { Task { await create() } }.disabled(parsed.title.isEmpty)

@@ -20,5 +20,10 @@
 	<string>DoIT uses your location to remind you about tasks when you arrive at or leave a place.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>DoIT monitors places in the background so location reminders fire even when the app is closed.</string>
+		<!-- Voice capture in Quick Add (FR-QADD-080): dictate a task with the mic + on-device speech. -->
+		<key>NSMicrophoneUsageDescription</key>
+		<string>DoIT uses the microphone so you can dictate a task in Quick Add.</string>
+		<key>NSSpeechRecognitionUsageDescription</key>
+		<string>DoIT transcribes your dictation into a task in Quick Add.</string>
 </dict>
 </plist>
