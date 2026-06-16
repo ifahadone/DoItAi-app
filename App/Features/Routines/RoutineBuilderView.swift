@@ -21,6 +21,12 @@ struct RoutineBuilderView: View {
     @State private var anchorDate = Date()
     @State private var weekdays: Set<Int> = [] // 1=Sun…7=Sat; empty = every day
     @State private var graceDays = 0
+    /// Smart wake (FR-ALRM-090): a first-commitment time the suggested wake works back from.
+    @State private var wakeEnabled = false
+    @State private var firstCommitment = Date()
+
+    /// Total duration of the routine's steps, in minutes.
+    private var totalStepMinutes: Int { steps.reduce(0) { $0 + max(0, $1.minutes) } }
 
     var body: some View {
         NavigationStack {
@@ -64,6 +70,19 @@ struct RoutineBuilderView: View {
                             DatePicker("Starts at", selection: $anchorDate, displayedComponents: .hourAndMinute)
                         }
                         weekdayPicker
+                    }
+                    Section {
+                        Toggle("Suggest a wake time", isOn: $wakeEnabled)
+                        if wakeEnabled {
+                            DatePicker("First commitment", selection: $firstCommitment, displayedComponents: .hourAndMinute)
+                            if let wake = SmartWakePlanner.suggestedWake(before: firstCommitment, routineMinutes: totalStepMinutes) {
+                                LabeledContent("Wake by", value: wake.formatted(date: .omitted, time: .shortened))
+                            }
+                        }
+                    } header: {
+                        Text("Smart wake")
+                    } footer: {
+                        Text("Wake just early enough to finish this \(totalStepMinutes)-min routine (plus a 10-min buffer) before your first commitment.")
                     }
                 } else {
                     Section("Schedule") {
