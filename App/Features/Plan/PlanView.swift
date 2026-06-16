@@ -15,7 +15,7 @@ struct PlanView: View {
         NavigationStack {
             Group {
                 switch mode {
-                case .planner: DayPlannerView()
+                case .planner: CalendarView()
                 case .lists: SmartListsView()
                 }
             }

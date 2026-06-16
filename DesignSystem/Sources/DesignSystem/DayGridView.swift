@@ -19,6 +19,9 @@ public struct DayGridView: View {
     private let onResize: ((String, Int) -> Void)?
     private let onTap: ((String) -> Void)?
     private let onDropSchedule: ((String, Int) -> Void)?
+    /// Minute-of-day for the red "now" indicator line (Apple-Calendar style); nil hides it (e.g. when
+    /// the grid isn't showing today).
+    private let nowMinute: Int?
 
     @State private var drag: DragState?
     @State private var dropTargeted = false
@@ -40,7 +43,8 @@ public struct DayGridView: View {
         onMove: ((String, Int) -> Void)? = nil,
         onResize: ((String, Int) -> Void)? = nil,
         onTap: ((String) -> Void)? = nil,
-        onDropSchedule: ((String, Int) -> Void)? = nil
+        onDropSchedule: ((String, Int) -> Void)? = nil,
+        nowMinute: Int? = nil
     ) {
         self.items = items
         self.titles = titles
@@ -51,6 +55,7 @@ public struct DayGridView: View {
         self.onResize = onResize
         self.onTap = onTap
         self.onDropSchedule = onDropSchedule
+        self.nowMinute = nowMinute
     }
 
     public var body: some View {
@@ -72,6 +77,17 @@ public struct DayGridView: View {
                         block(item: item, grid: grid,
                               lane: lanes[item.id] ?? LaneAssignment(id: item.id, lane: 0, laneCount: 1),
                               areaWidth: areaWidth)
+                    }
+                    if let nowMinute {
+                        let ny = grid.y(forMinute: max(0, min(1440, nowMinute)))
+                        Path { p in
+                            p.move(to: CGPoint(x: gutter, y: ny)); p.addLine(to: CGPoint(x: geo.size.width, y: ny))
+                        }
+                        .stroke(Color.red, lineWidth: 1.5)
+                        .allowsHitTesting(false)
+                        Circle().fill(Color.red).frame(width: 8, height: 8)
+                            .position(x: gutter, y: ny)
+                            .allowsHitTesting(false)
                     }
                 }
                 .frame(width: geo.size.width, height: grid.totalHeight, alignment: .topLeading)

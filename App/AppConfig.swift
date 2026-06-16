@@ -263,4 +263,16 @@ enum AppConfig {
         return nil
         #endif
     }
+
+    /// DEBUG-only: `-calScale <day|week|month>` sets the planner calendar's initial scale so Week/Month
+    /// can be screenshot without UI navigation. `nil` in release.
+    static var calendarScale: String? {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-calScale"), i + 1 < args.count { return args[i + 1] }
+        return nil
+        #else
+        return nil
+        #endif
+    }
 }

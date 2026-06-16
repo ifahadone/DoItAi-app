@@ -1,0 +1,425 @@
+import SwiftUI
+import SwiftData
+import SyncCore
+import DesignSystem
+
+/// Apple-Calendar-style planner (AppSpec §5.3): Day / Week / Month views over the user's scheduled
+/// tasks, with a navigation header (prev/next + Today) and a scale switcher. The Day view reuses the
+/// interactive ``DayGridView`` (tap-to-create, long-press drag-move/resize, drag-to-schedule tray,
+/// free/busy backdrop, now-line); Week + Month are overview/navigation surfaces. Tapping a day in
+/// Week/Month drills into the Day view for that date.
+struct CalendarView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.theme) private var theme
+    @Environment(AuthService.self) private var auth
+    @Environment(AppServices.self) private var services
+
+    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil && !$0.archived && $0.statusRaw != 4 })
+    private var tasks: [TaskModel]
+    @Query(filter: #Predicate<TaskListModel> { $0.deletedAt == nil })
+    private var lists: [TaskListModel]
+
+    enum Scale: String, CaseIterable, Identifiable {
+        case day = "Day", week = "Week", month = "Month"
+        var id: String { rawValue }
+    }
+
+    @State private var scale: Scale = .day
+    @State private var selectedDate = Calendar.current.startOfDay(for: Date())
+    @State private var selectedTask: TaskModel?
+
+    private var cal: Calendar { Calendar.current }
+    private var today: Date { cal.startOfDay(for: services.clock.now()) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            switch scale {
+            case .day: dayView
+            case .week: weekView
+            case .month: monthView
+            }
+        }
+        .sheet(item: $selectedTask) { task in
+            TaskDetailView(task: task).environment(auth).environment(services)
+        }
+        .onAppear {
+            #if DEBUG
+            if let s = AppConfig.calendarScale, let v = Scale(rawValue: s.capitalized) { scale = v }
+            #endif
+        }
+    }
+
+    // MARK: - Header (title · prev/next · Today · scale switcher)
+
+    private var header: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text(title).font(.title3.weight(.semibold))
+                Spacer()
+                Button { step(-1) } label: { Image(systemName: "chevron.left") }
+                Button("Today") { withAnimation { selectedDate = today } }
+                    .font(.subheadline)
+                Button { step(1) } label: { Image(systemName: "chevron.right") }
+            }
+            Picker("View", selection: $scale.animation()) {
+                ForEach(Scale.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(.horizontal).padding(.top, 6).padding(.bottom, 8)
+    }
+
+    private var title: String {
+        switch scale {
+        case .day:
+            return selectedDate.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+        case .week:
+            let days = weekDays(of: selectedDate)
+            let start = days.first ?? selectedDate, end = days.last ?? selectedDate
+            let s = start.formatted(.dateTime.month(.abbreviated).day())
+            let e = end.formatted(cal.isDate(start, equalTo: end, toGranularity: .month)
+                                  ? .dateTime.day() : .dateTime.month(.abbreviated).day())
+            return "\(s) – \(e)"
+        case .month:
+            return selectedDate.formatted(.dateTime.month(.wide).year())
+        }
+    }
+
+    private func step(_ direction: Int) {
+        let component: Calendar.Component = scale == .day ? .day : (scale == .week ? .weekOfYear : .month)
+        let value = scale == .day ? direction : direction // weekOfYear/month step by 1 unit
+        if let next = cal.date(byAdding: component, value: value, to: selectedDate) {
+            withAnimation { selectedDate = cal.startOfDay(for: next) }
+        }
+    }
+
+    // MARK: - Day view
+
+    private var dayView: some View {
+        VStack(spacing: 0) {
+            DayGridView(
+                items: dayItems(selectedDate),
+                titles: titles(for: selectedDate),
+                busy: busyItems(for: selectedDate),
+                onCreate: { minute in Task { await createBlock(at: minute, on: selectedDate) } },
+                onMove: { id, start in Task { await move(id, toStart: start, on: selectedDate) } },
+                onResize: { id, end in Task { await resize(id, toEnd: end, on: selectedDate) } },
+                onTap: { id in selectedTask = tasks.first { $0.id == id } },
+                onDropSchedule: { id, minute in Task { await schedule(id, at: minute, on: selectedDate) } },
+                nowMinute: cal.isDate(selectedDate, inSameDayAs: today) ? currentMinute() : nil
+            )
+            if !unscheduled.isEmpty { tray }
+        }
+    }
+
+    // MARK: - Week view
+
+    private var weekView: some View {
+        let days = weekDays(of: selectedDate)
+        let grid = DayGridLayout(hourHeight: 44)
+        return VStack(spacing: 0) {
+            weekHeader(days)
+            Divider()
+            ScrollView {
+                HStack(alignment: .top, spacing: 0) {
+                    hourAxis(grid)
+                    ForEach(days, id: \.self) { day in
+                        weekColumn(day, grid: grid)
+                            .overlay(Rectangle().frame(width: 0.5).frame(maxHeight: .infinity)
+                                .foregroundStyle(theme.colors.separator.opacity(0.4)), alignment: .leading)
+                    }
+                }
+            }
+        }
+    }
+
+    private func weekHeader(_ days: [Date]) -> some View {
+        HStack(spacing: 0) {
+            Spacer().frame(width: 38)
+            ForEach(days, id: \.self) { day in
+                let isToday = cal.isDate(day, inSameDayAs: today)
+                VStack(spacing: 2) {
+                    Text(day.formatted(.dateTime.weekday(.narrow))).font(.caption2).foregroundStyle(.secondary)
+                    Text(day.formatted(.dateTime.day()))
+                        .font(.subheadline.weight(.semibold))
+                        .frame(width: 28, height: 28)
+                        .background(isToday ? Color.red : .clear, in: Circle())
+                        .foregroundStyle(isToday ? .white : .primary)
+                }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation { selectedDate = day; scale = .day } }
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func hourAxis(_ grid: DayGridLayout) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(1..<24, id: \.self) { hour in
+                Text(hourLabel(hour)).font(.system(size: 9)).foregroundStyle(.secondary)
+                    .frame(width: 34, alignment: .trailing)
+                    .position(x: 19, y: grid.y(forMinute: hour * 60))
+            }
+        }
+        .frame(width: 38, height: grid.totalHeight, alignment: .topLeading)
+    }
+
+    private func weekColumn(_ day: Date, grid: DayGridLayout) -> some View {
+        let items = dayItems(day)
+        let lanes = Dictionary(uniqueKeysWithValues: DayGridPacker.assign(items).map { ($0.id, $0) })
+        let isToday = cal.isDate(day, inSameDayAs: today)
+        return GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                ForEach(0..<24, id: \.self) { hour in
+                    Path { p in
+                        let y = grid.y(forMinute: hour * 60)
+                        p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: geo.size.width, y: y))
+                    }.stroke(theme.colors.separator.opacity(0.25), lineWidth: 0.5)
+                }
+                Color.clear.contentShape(Rectangle())
+                    .gesture(SpatialTapGesture().onEnded { v in
+                        Task { await createBlock(at: grid.snap(grid.minute(forY: v.location.y)), on: day) }
+                    })
+                ForEach(items) { item in
+                    let lane = lanes[item.id] ?? LaneAssignment(id: item.id, lane: 0, laneCount: 1)
+                    let w = geo.size.width / CGFloat(max(1, lane.laneCount))
+                    let color = Color(hex: item.colorHex) ?? theme.colors.accent
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(color.opacity(0.85))
+                        .overlay(alignment: .topLeading) {
+                            Text(titles(for: day)[item.id] ?? "")
+                                .font(.system(size: 9, weight: .medium)).foregroundStyle(.white)
+                                .lineLimit(2).padding(.horizontal, 2).padding(.top, 1)
+                        }
+                        .frame(width: max(0, w - 1), height: max(12, grid.height(forDuration: item.durationMinutes)), alignment: .topLeading)
+                        .offset(x: w * CGFloat(lane.lane), y: grid.y(forMinute: item.startMinute))
+                        .onTapGesture { selectedTask = tasks.first { $0.id == item.id } }
+                }
+                if isToday {
+                    let ny = grid.y(forMinute: currentMinute())
+                    Path { p in p.move(to: CGPoint(x: 0, y: ny)); p.addLine(to: CGPoint(x: geo.size.width, y: ny)) }
+                        .stroke(Color.red, lineWidth: 1).allowsHitTesting(false)
+                }
+            }
+            .frame(height: grid.totalHeight)
+        }
+        .frame(height: grid.totalHeight)
+    }
+
+    // MARK: - Month view
+
+    private var monthView: some View {
+        let g = MonthGridBuilder.make(for: selectedDate, calendar: cal)
+        return VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                ForEach(Array(g.weekdaySymbols.enumerated()), id: \.offset) { _, sym in
+                    Text(sym).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.vertical, 6)
+            Divider()
+            GeometryReader { geo in
+                let rowH = geo.size.height / 6
+                VStack(spacing: 0) {
+                    ForEach(0..<6, id: \.self) { row in
+                        HStack(spacing: 0) {
+                            ForEach(g.weeks[row]) { day in
+                                monthCell(day, height: rowH)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func monthCell(_ day: MonthGrid.Day, height: CGFloat) -> some View {
+        let isToday = cal.isDate(day.date, inSameDayAs: today)
+        let isSelected = cal.isDate(day.date, inSameDayAs: selectedDate)
+        let dayTasks = tasksOn(day.date)
+        return VStack(spacing: 3) {
+            Text(day.date.formatted(.dateTime.day()))
+                .font(.callout)
+                .frame(width: 26, height: 26)
+                .background(isToday ? Color.red : (isSelected ? theme.colors.accent.opacity(0.18) : .clear), in: Circle())
+                .foregroundStyle(isToday ? .white : (day.inMonth ? .primary : .secondary.opacity(0.5)))
+            HStack(spacing: 2) {
+                ForEach(dayTasks.prefix(3), id: \.id) { task in
+                    Circle()
+                        .fill(task.listId.flatMap { id in lists.first { $0.id == id }?.colorHex }
+                            .flatMap { Color(hex: $0) } ?? theme.colors.accent)
+                        .frame(width: 5, height: 5)
+                }
+                if dayTasks.count > 3 { Text("+\(dayTasks.count - 3)").font(.system(size: 8)).foregroundStyle(.secondary) }
+            }
+            .frame(height: 6)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height, alignment: .top)
+        .padding(.top, 4)
+        .overlay(Rectangle().frame(height: 0.5).foregroundStyle(theme.colors.separator.opacity(0.4)), alignment: .top)
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation { selectedDate = day.date; scale = .day } }
+    }
+
+    // MARK: - Unscheduled tray (day view)
+
+    private var unscheduled: [TaskModel] {
+        let onGrid = Set(dayItems(selectedDate).map(\.id))
+        return tasks
+            .filter { $0.status != .done && !onGrid.contains($0.id) }
+            .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
+    }
+
+    private var tray: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Drag to schedule").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(unscheduled) { task in
+                        trayChip(task).draggable(task.id) { trayChip(task).opacity(0.9) }
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+        }
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func trayChip(_ task: TaskModel) -> some View {
+        let color = task.listId.flatMap { id in lists.first { $0.id == id }?.colorHex }
+            .flatMap { Color(hex: $0) } ?? .accentColor
+        return Text(task.title)
+            .font(.caption).lineLimit(1)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .foregroundStyle(color)
+            .background(color.opacity(0.16), in: Capsule())
+            .overlay(Capsule().strokeBorder(color.opacity(0.4), lineWidth: 1))
+    }
+
+    // MARK: - Data
+
+    private func weekDays(of date: Date) -> [Date] {
+        guard let start = cal.dateInterval(of: .weekOfYear, for: date)?.start else { return [date] }
+        return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
+    }
+
+    private func currentMinute() -> Int {
+        let c = cal.dateComponents([.hour, .minute], from: services.clock.now())
+        return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+    }
+
+    private func hourLabel(_ hour: Int) -> String {
+        switch hour { case 0: return "12a"; case 12: return "12p"; case let h where h < 12: return "\(h)a"; default: return "\(hour - 12)p" }
+    }
+
+    /// Tasks rendered as blocks on `date`: scheduled ranges; due-only tasks as 30-min markers.
+    private func dayItems(_ date: Date) -> [SectographItem] {
+        func minute(_ d: Date) -> Int? {
+            guard cal.isDate(d, inSameDayAs: date) else { return nil }
+            let c = cal.dateComponents([.hour, .minute], from: d)
+            return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        }
+        return tasks.compactMap { task in
+            let color = task.listId.flatMap { id in lists.first { $0.id == id }?.colorHex }
+            if let start = task.scheduledStart, let sm = minute(start) {
+                let em = task.scheduledEnd.flatMap(minute) ?? min(1440, sm + 60)
+                return SectographItem(id: task.id, startMinute: sm, endMinute: em, colorHex: color)
+            } else if let due = task.dueAt, let dm = minute(due) {
+                return SectographItem(id: task.id, startMinute: dm, endMinute: min(1440, dm + 30), colorHex: color)
+            }
+            return nil
+        }
+    }
+
+    private func titles(for date: Date) -> [String: String] {
+        Dictionary(tasks.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Tasks scheduled or due on `date` (for month dots).
+    private func tasksOn(_ date: Date) -> [TaskModel] {
+        tasks.filter { task in
+            if let s = task.scheduledStart, cal.isDate(s, inSameDayAs: date) { return true }
+            if let d = task.dueAt, cal.isDate(d, inSameDayAs: date) { return true }
+            return false
+        }
+    }
+
+    private func busyItems(for date: Date) -> [SectographItem] {
+        #if DEBUG
+        if AppConfig.isCalendarDemo && cal.isDate(date, inSameDayAs: today) {
+            return [
+                SectographItem(id: "busy:standup", startMinute: 11 * 60, endMinute: 12 * 60),
+                SectographItem(id: "busy:review", startMinute: 14 * 60, endMinute: 15 * 60 + 30),
+            ]
+        }
+        #endif
+        // EventKit free/busy is queried for "now"; only meaningful for today's grid.
+        return cal.isDate(date, inSameDayAs: today) ? services.calendar.busyItems(now: services.clock.now()) : []
+    }
+
+    // MARK: - Mutations
+
+    private var mutation: TaskMutation {
+        TaskMutation(context: modelContext, engine: services.syncEngine, clock: services.clock, idGenerator: services.idGenerator)
+    }
+    private var ownerId: String {
+        if case let .signedIn(userId) = auth.state, let userId { return userId }
+        return "local-user"
+    }
+    private func syncIfLive() async { if AppConfig.isLiveSync { await services.syncOnce() } }
+
+    private func date(atMinute minute: Int, on day: Date) -> Date {
+        let startOfDay = cal.startOfDay(for: day)
+        return cal.date(byAdding: .minute, value: max(0, min(1440, minute)), to: startOfDay) ?? startOfDay
+    }
+    private func minuteOfDay(_ d: Date) -> Int {
+        let c = cal.dateComponents([.hour, .minute], from: d); return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+    }
+    private func durationMinutes(_ task: TaskModel) -> Int {
+        if let s = task.scheduledStart, let e = task.scheduledEnd { return max(15, Int(e.timeIntervalSince(s) / 60)) }
+        return 60
+    }
+    private func fetch(_ id: String) -> TaskModel? {
+        var d = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == id }); d.fetchLimit = 1
+        return try? modelContext.fetch(d).first
+    }
+
+    private func createBlock(at minute: Int, on day: Date) async {
+        let creator = TaskCreation(context: modelContext, engine: services.syncEngine, ownerId: ownerId,
+                                   clock: services.clock, idGenerator: services.idGenerator)
+        let id = await creator.createTask(title: "New block")
+        if let task = tasks.first(where: { $0.id == id }) ?? fetch(id) {
+            await mutation.setSchedule(task, start: date(atMinute: minute, on: day),
+                                       end: date(atMinute: min(1440, minute + 60), on: day))
+        }
+        await syncIfLive()
+    }
+    private func move(_ id: String, toStart startMinute: Int, on day: Date) async {
+        guard let task = tasks.first(where: { $0.id == id }) else { return }
+        let dur = durationMinutes(task)
+        await mutation.setSchedule(task, start: date(atMinute: startMinute, on: day),
+                                   end: date(atMinute: min(1440, startMinute + dur), on: day))
+        await syncIfLive()
+    }
+    private func resize(_ id: String, toEnd endMinute: Int, on day: Date) async {
+        guard let task = tasks.first(where: { $0.id == id }) else { return }
+        let startMinute = task.scheduledStart.map(minuteOfDay) ?? max(0, endMinute - 60)
+        await mutation.setSchedule(task, start: date(atMinute: startMinute, on: day),
+                                   end: date(atMinute: max(startMinute + 15, endMinute), on: day))
+        await syncIfLive()
+    }
+    private func schedule(_ id: String, at minute: Int, on day: Date) async {
+        guard let task = tasks.first(where: { $0.id == id }) else { return }
+        await mutation.setSchedule(task, start: date(atMinute: minute, on: day),
+                                   end: date(atMinute: min(1440, minute + 60), on: day))
+        await syncIfLive()
+    }
+}
