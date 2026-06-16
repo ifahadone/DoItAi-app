@@ -27,9 +27,13 @@ struct CalendarView: View {
     @State private var scale: Scale = .day
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var selectedTask: TaskModel?
+    /// Direction the incoming month slides from, for the swipe/paging transition.
+    @State private var slideEdge: Edge = .trailing
 
     private var cal: Calendar { Calendar.current }
     private var today: Date { cal.startOfDay(for: services.clock.now()) }
+    /// Stable identity for the displayed month (drives the slide transition on change).
+    private var monthKey: Int { cal.component(.year, from: selectedDate) * 12 + cal.component(.month, from: selectedDate) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -89,9 +93,9 @@ struct CalendarView: View {
 
     private func step(_ direction: Int) {
         let component: Calendar.Component = scale == .day ? .day : (scale == .week ? .weekOfYear : .month)
-        let value = scale == .day ? direction : direction // weekOfYear/month step by 1 unit
-        if let next = cal.date(byAdding: component, value: value, to: selectedDate) {
-            withAnimation { selectedDate = cal.startOfDay(for: next) }
+        slideEdge = direction > 0 ? .trailing : .leading // new content enters from the swipe direction
+        if let next = cal.date(byAdding: component, value: direction, to: selectedDate) {
+            withAnimation(.easeInOut(duration: 0.28)) { selectedDate = cal.startOfDay(for: next) }
         }
     }
 
@@ -222,7 +226,7 @@ struct CalendarView: View {
             }
             .padding(.vertical, 6)
             Divider()
-            // Compact month grid up top…
+            // Compact month grid up top — swipe left/right to page months…
             VStack(spacing: 0) {
                 ForEach(0..<6, id: \.self) { row in
                     HStack(spacing: 0) {
@@ -232,10 +236,23 @@ struct CalendarView: View {
                     }
                 }
             }
+            .id(monthKey)
+            .transition(.asymmetric(
+                insertion: .move(edge: slideEdge).combined(with: .opacity),
+                removal: .move(edge: slideEdge == .trailing ? .leading : .trailing).combined(with: .opacity)))
+            .gesture(
+                DragGesture(minimumDistance: 24)
+                    .onEnded { value in
+                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                        if value.translation.width < -40 { step(1) }       // swipe left → next month
+                        else if value.translation.width > 40 { step(-1) }  // swipe right → previous month
+                    }
+            )
             Divider()
             // …with the selected day's agenda listed below (Apple-Calendar month layout).
             agendaList
         }
+        .clipped() // contain the sliding month within the calendar area
     }
 
     /// Agenda for the selected day, beneath the month grid: time-sorted rows of that day's events/due
