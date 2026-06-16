@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// The vertical day-planner grid (AppSpec §5.3). Renders hour lines + labels and today's blocks
 /// (lane-packed for overlaps via ``DayGridPacker``), with tap-empty-to-create, drag-to-move, and a
@@ -87,6 +90,7 @@ public struct DayGridView: View {
             }
             .frame(height: grid.totalHeight)
         }
+        .scrollDisabled(drag != nil)
     }
 
     /// Calendar free/busy backdrop (P2-5): full-width muted bands behind the task blocks, drawn from
@@ -143,6 +147,7 @@ public struct DayGridView: View {
         let laneWidth = areaWidth / CGFloat(max(1, lane.laneCount))
         let x = gutter + 4 + laneWidth * CGFloat(lane.lane)
         let color = Color(hex: item.colorHex) ?? theme.colors.accent
+        let lifted = dragging && !(drag?.resizing ?? false)
 
         RoundedRectangle(cornerRadius: 8)
             .fill(color.opacity(0.22))
@@ -156,18 +161,34 @@ public struct DayGridView: View {
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(color.opacity(0.5), lineWidth: 1))
             .overlay(alignment: .bottom) { resizeHandle(item: item, grid: grid, color: color) }
             .frame(width: max(0, laneWidth - 4), height: grid.height(forDuration: duration), alignment: .topLeading)
+            .scaleEffect(lifted ? 1.03 : 1)
+            .shadow(color: .black.opacity(lifted ? 0.18 : 0), radius: lifted ? 6 : 0, x: 0, y: lifted ? 3 : 0)
             .offset(x: x, y: grid.y(forMinute: start))
+            .zIndex(lifted ? 1 : 0)
+            .contentShape(Rectangle())
             .onTapGesture { onTap?(item.id) }
+            // Drag-to-MOVE is gated behind a long press so a plain vertical swipe is left to the
+            // ScrollView (smooth scroll); a press-then-drag picks the block up (Apple Calendar
+            // convention). In `.second(true, d)` the press has succeeded — d == nil is the "armed"
+            // instant (lift + haptic), a non-nil d is the live drag.
             .gesture(
-                DragGesture(minimumDistance: 6)
+                LongPressGesture(minimumDuration: 0.25)
+                    .sequenced(before: DragGesture(minimumDistance: 0))
                     .onChanged { value in
-                        drag = DragState(id: item.id, deltaMinutes: minutes(value.translation.height, grid), resizing: false)
+                        guard case .second(true, let d) = value else { return }
+                        if drag?.id != item.id { liftHaptic() } // fires once, on pickup
+                        drag = DragState(id: item.id,
+                                         deltaMinutes: d.map { minutes($0.translation.height, grid) } ?? 0,
+                                         resizing: false)
                     }
                     .onEnded { value in
-                        onMove?(item.id, grid.snap(item.startMinute + minutes(value.translation.height, grid)))
+                        if case .second(true, let d?) = value {
+                            onMove?(item.id, grid.snap(item.startMinute + minutes(d.translation.height, grid)))
+                        }
                         drag = nil
                     }
             )
+            .animation(.easeOut(duration: 0.12), value: lifted)
     }
 
     private func resizeHandle(item: SectographItem, grid: DayGridLayout, color: Color) -> some View {
@@ -184,6 +205,14 @@ public struct DayGridView: View {
                         drag = nil
                     }
             )
+    }
+
+    /// A light impact when a block is picked up for moving, so the press-to-move is legible (the move
+    /// now requires a brief hold). No-op on platforms without UIKit (e.g. the macOS package build).
+    private func liftHaptic() {
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+        #endif
     }
 
     private func minutes(_ points: CGFloat, _ grid: DayGridLayout) -> Int {

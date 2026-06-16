@@ -133,6 +133,19 @@ struct TaskMutation {
         await patch(task, fields: ["rank": .int(rank)]) { $0.rank = rank }
     }
 
+    /// Cancel a task — sets status `.cancelled`; the row is kept (not a delete tombstone) but hidden
+    /// from active lists (FR-TASK-180).
+    func cancel(_ task: TaskModel) async {
+        guard task.status != .cancelled else { return }
+        await patch(task, fields: ["status": .int(TaskStatus.cancelled.rawValue)]) { $0.status = .cancelled }
+    }
+
+    /// Archive / unarchive a task — sets the `archived` flag; kept, hidden from active lists (FR-TASK-180).
+    func setArchived(_ task: TaskModel, _ archived: Bool) async {
+        guard archived != task.archived else { return }
+        await patch(task, fields: ["archived": .bool(archived)]) { $0.archived = archived }
+    }
+
     /// Add focus-timer minutes to the task's logged `actualMinutes` (P2-4).
     func addActualMinutes(_ task: TaskModel, _ minutes: Int) async {
         guard minutes > 0 else { return }

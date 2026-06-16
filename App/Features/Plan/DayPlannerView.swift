@@ -12,7 +12,7 @@ struct DayPlannerView: View {
     @Environment(AuthService.self) private var auth
     @Environment(AppServices.self) private var services
 
-    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil })
+    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil && !$0.archived && $0.statusRaw != 4 })
     private var tasks: [TaskModel]
     @Query(filter: #Predicate<TaskListModel> { $0.deletedAt == nil })
     private var lists: [TaskListModel]

@@ -11,7 +11,7 @@ struct ListDetailView: View {
     @Environment(AppServices.self) private var services
     @Bindable var list: TaskListModel
 
-    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil },
+    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil && !$0.archived && $0.statusRaw != 4 },
            sort: \TaskModel.createdAt, order: .reverse)
     private var allTasks: [TaskModel]
 
@@ -25,7 +25,10 @@ struct ListDetailView: View {
     /// sticks (FR-TASK-150).
     private var tasksInList: [TaskModel] {
         allTasks.filter { $0.listId == list.id }
-            .sorted { $0.rank != $1.rank ? $0.rank < $1.rank : $0.createdAt > $1.createdAt }
+            .sorted { a, b in
+                if a.rank != b.rank { return a.rank < b.rank }
+                return a.createdAt > b.createdAt
+            }
     }
 
     var body: some View {

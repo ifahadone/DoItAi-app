@@ -10,7 +10,7 @@ import DesignSystem
 struct SmartListsView: View {
     @Environment(AppServices.self) private var services
 
-    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil })
+    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil && !$0.archived && $0.statusRaw != 4 })
     private var tasks: [TaskModel]
 
     var body: some View {
@@ -46,7 +46,7 @@ struct SmartListDetailView: View {
     @Environment(AppServices.self) private var services
     let smartList: SmartList
 
-    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil }, sort: \TaskModel.dueAt)
+    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil && !$0.archived && $0.statusRaw != 4 }, sort: \TaskModel.dueAt)
     private var allTasks: [TaskModel]
 
     @State private var selectedTask: TaskModel?

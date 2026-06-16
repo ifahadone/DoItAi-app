@@ -17,7 +17,7 @@ struct TodayView: View {
 
     /// Live query: non-deleted tasks, newest first. SwiftData keeps this in sync with the store.
     @Query(
-        filter: #Predicate<TaskModel> { $0.deletedAt == nil },
+        filter: #Predicate<TaskModel> { $0.deletedAt == nil && !$0.archived && $0.statusRaw != 4 },
         sort: \TaskModel.createdAt,
         order: .reverse
     )
@@ -288,9 +288,24 @@ struct TodayView: View {
         } label: { Label("Reschedule", systemImage: "calendar.badge.clock") }
         Button { selectedTask = task } label: { Label("Open", systemImage: "info.circle") }
         Divider()
+        Button { Task { await cancelTask(task) } } label: { Label("Cancel task", systemImage: "xmark.circle") }
+        Button { Task { await archiveTask(task) } } label: { Label("Archive", systemImage: "archivebox") }
+        Divider()
         Button(role: .destructive) { Task { await delete(task) } } label: {
             Label("Delete", systemImage: "trash")
         }
+    }
+
+    /// Cancel a task — kept (not deleted), leaves the active list (FR-TASK-180).
+    private func cancelTask(_ task: TaskModel) async {
+        await mutation.cancel(task)
+        if AppConfig.isLiveSync { await services.syncOnce() }
+    }
+
+    /// Archive a task — kept (not deleted), leaves the active list (FR-TASK-180).
+    private func archiveTask(_ task: TaskModel) async {
+        await mutation.setArchived(task, true)
+        if AppConfig.isLiveSync { await services.syncOnce() }
     }
 
     /// Apply a one-tap reschedule preset to a task's due date (FR-TASK-160).

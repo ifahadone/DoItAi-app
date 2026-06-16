@@ -16,7 +16,7 @@ struct ListsView: View {
     private var lists: [TaskListModel]
     @Query(filter: #Predicate<TagModel> { $0.deletedAt == nil }, sort: \TagModel.name)
     private var tags: [TagModel]
-    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil })
+    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil && !$0.archived && $0.statusRaw != 4 })
     private var tasks: [TaskModel]
 
     @State private var creatingList = false
