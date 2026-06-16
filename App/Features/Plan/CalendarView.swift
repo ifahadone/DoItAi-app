@@ -222,19 +222,69 @@ struct CalendarView: View {
             }
             .padding(.vertical, 6)
             Divider()
-            GeometryReader { geo in
-                let rowH = geo.size.height / 6
-                VStack(spacing: 0) {
-                    ForEach(0..<6, id: \.self) { row in
-                        HStack(spacing: 0) {
-                            ForEach(g.weeks[row]) { day in
-                                monthCell(day, height: rowH)
-                            }
+            // Compact month grid up top…
+            VStack(spacing: 0) {
+                ForEach(0..<6, id: \.self) { row in
+                    HStack(spacing: 0) {
+                        ForEach(g.weeks[row]) { day in
+                            monthCell(day, height: 48)
                         }
                     }
                 }
             }
+            Divider()
+            // …with the selected day's agenda listed below (Apple-Calendar month layout).
+            agendaList
         }
+    }
+
+    /// Agenda for the selected day, beneath the month grid: time-sorted rows of that day's events/due
+    /// tasks. Tapping a day in the grid updates this list; tapping a row opens the task.
+    private var agendaList: some View {
+        let entries = agenda(for: selectedDate)
+        return List {
+            Section {
+                if entries.isEmpty {
+                    Text("Nothing scheduled").font(.subheadline).foregroundStyle(.secondary)
+                } else {
+                    ForEach(entries, id: \.task.id) { entry in
+                        HStack(spacing: 10) {
+                            Text(entry.timeLabel)
+                                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                                .frame(width: 92, alignment: .leading)
+                            RoundedRectangle(cornerRadius: 2).fill(color(for: entry.task)).frame(width: 3, height: 22)
+                            Text(entry.task.title).font(.subheadline).lineLimit(1)
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedTask = entry.task }
+                    }
+                }
+            } header: {
+                Text(selectedDate.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+            }
+        }
+        .listStyle(.plain)
+    }
+
+    private func color(for task: TaskModel) -> Color {
+        task.listId.flatMap { id in lists.first { $0.id == id }?.colorHex }.flatMap { Color(hex: $0) } ?? theme.colors.accent
+    }
+
+    private struct AgendaEntry { let task: TaskModel; let timeLabel: String; let sort: Int }
+    private func agenda(for date: Date) -> [AgendaEntry] {
+        func minute(_ d: Date) -> Int { let c = cal.dateComponents([.hour, .minute], from: d); return (c.hour ?? 0) * 60 + (c.minute ?? 0) }
+        func timeStr(_ d: Date) -> String { d.formatted(date: .omitted, time: .shortened) }
+        var entries: [AgendaEntry] = []
+        for task in tasksOn(date) {
+            if let s = task.scheduledStart, cal.isDate(s, inSameDayAs: date) {
+                let label = task.scheduledEnd.map { "\(timeStr(s)) – \(timeStr($0))" } ?? timeStr(s)
+                entries.append(AgendaEntry(task: task, timeLabel: label, sort: minute(s)))
+            } else if let d = task.dueAt, cal.isDate(d, inSameDayAs: date) {
+                entries.append(AgendaEntry(task: task, timeLabel: "Due \(timeStr(d))", sort: minute(d)))
+            }
+        }
+        return entries.sorted { $0.sort < $1.sort }
     }
 
     private func monthCell(_ day: MonthGrid.Day, height: CGFloat) -> some View {
@@ -264,7 +314,7 @@ struct CalendarView: View {
         .padding(.top, 4)
         .overlay(Rectangle().frame(height: 0.5).foregroundStyle(theme.colors.separator.opacity(0.4)), alignment: .top)
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation { selectedDate = day.date; scale = .day } }
+        .onTapGesture { withAnimation { selectedDate = day.date } } // select → updates the agenda below
     }
 
     // MARK: - Unscheduled tray (day view)
