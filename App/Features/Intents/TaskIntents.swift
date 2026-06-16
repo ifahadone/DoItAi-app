@@ -1,6 +1,7 @@
 import AppIntents
 import SwiftData
 import Foundation
+import SyncCore
 
 /// App Intents for interactive task/reminder actions from outside the app — Shortcuts, Siri, and the
 /// agenda widget's buttons (AppSpec §5.9, DevelopmentPlan P1-J). They mutate the shared SwiftData
@@ -65,5 +66,60 @@ struct SnoozeReminderIntent: AppIntent {
             try context.save()
         }
         return .result()
+    }
+}
+
+/// Capture a task from a natural-language phrase via Siri / Shortcuts (FR-QADD-100). Parses the phrase
+/// with the on-device ``QuickAddParser`` (title + due date + priority + estimated duration) and inserts
+/// a `pendingCreate` task into the shared store; it flushes on the app's next foreground sync (same
+/// model + caveat as the other intents above).
+struct QuickAddTaskIntent: AppIntent {
+    static var title: LocalizedStringResource = "Quick Add Task"
+    static var description = IntentDescription("Capture a task in DoIT from a natural-language phrase.")
+
+    @Parameter(title: "Task", requestValueDialog: "What would you like to add?")
+    var phrase: String
+
+    init() {}
+    init(phrase: String) { self.phrase = phrase }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let parsed = QuickAddParser.parse(phrase)
+        let title = parsed.title.isEmpty ? phrase : parsed.title
+        let context = PersistenceContainer.makeShared().mainContext
+        // Reuse an existing row's owner so the task belongs to the signed-in user; fall back to the
+        // same local placeholder the in-app path uses pre-sign-in (the server re-derives the
+        // authoritative owner from the auth token on push).
+        var ownerDescriptor = FetchDescriptor<TaskModel>()
+        ownerDescriptor.fetchLimit = 1
+        let owner = (try? context.fetch(ownerDescriptor))?.first?.ownerId ?? "local-user"
+        let now = Date()
+        let task = TaskModel(
+            id: UUID().uuidString, ownerId: owner, title: title,
+            statusRaw: TaskStatus.inbox.rawValue, createdAt: now, updatedAt: now,
+            serverVersion: 0, syncStateRaw: LocalSyncState.pendingCreate.rawValue)
+        task.dueAt = parsed.dueAt
+        task.priority = parsed.priority
+        task.estimatedMinutes = parsed.estimatedMinutes
+        context.insert(task)
+        try context.save()
+        return .result(dialog: "Added “\(title)” to DoIT.")
+    }
+}
+
+/// Registers DoIT's App Intents as Siri-invocable shortcuts (FR-QADD-100).
+struct DoITAppShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: QuickAddTaskIntent(),
+            phrases: [
+                "Quick add in \(.applicationName)",
+                "Add a task in \(.applicationName)",
+                "Capture in \(.applicationName)",
+            ],
+            shortTitle: "Quick Add",
+            systemImageName: "plus.circle.fill"
+        )
     }
 }
