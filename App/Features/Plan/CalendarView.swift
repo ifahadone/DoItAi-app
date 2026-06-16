@@ -27,13 +27,13 @@ struct CalendarView: View {
     @State private var scale: Scale = .day
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var selectedTask: TaskModel?
-    /// Direction the incoming month slides from, for the swipe/paging transition.
-    @State private var slideEdge: Edge = .trailing
+    /// Interactive month-pager drag offset (follows the finger) + the measured page width.
+    @State private var dragOffset: CGFloat = 0
+    @State private var pageWidth: CGFloat = 0
 
     private var cal: Calendar { Calendar.current }
     private var today: Date { cal.startOfDay(for: services.clock.now()) }
-    /// Stable identity for the displayed month (drives the slide transition on change).
-    private var monthKey: Int { cal.component(.year, from: selectedDate) * 12 + cal.component(.month, from: selectedDate) }
+    private func addMonths(_ n: Int) -> Date { cal.startOfDay(for: cal.date(byAdding: .month, value: n, to: selectedDate) ?? selectedDate) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -92,10 +92,35 @@ struct CalendarView: View {
     }
 
     private func step(_ direction: Int) {
-        let component: Calendar.Component = scale == .day ? .day : (scale == .week ? .weekOfYear : .month)
-        slideEdge = direction > 0 ? .trailing : .leading // new content enters from the swipe direction
+        if scale == .month {
+            if pageWidth > 0 { slideAndCommit(dir: direction, to: direction > 0 ? -pageWidth : pageWidth) }
+            else { withAnimation(.easeInOut(duration: 0.25)) { selectedDate = addMonths(direction) } }
+            return
+        }
+        let component: Calendar.Component = scale == .day ? .day : .weekOfYear
         if let next = cal.date(byAdding: component, value: direction, to: selectedDate) {
             withAnimation(.easeInOut(duration: 0.28)) { selectedDate = cal.startOfDay(for: next) }
+        }
+    }
+
+    /// End-of-drag decision for the month pager: past a quarter-width, page; else snap back.
+    private func endMonthDrag(_ dx: CGFloat, width w: CGFloat) {
+        let threshold = w / 4
+        if dx < -threshold { slideAndCommit(dir: 1, to: -w) }
+        else if dx > threshold { slideAndCommit(dir: -1, to: w) }
+        else { withAnimation(.easeOut(duration: 0.2)) { dragOffset = 0 } }
+    }
+
+    /// Animate the strip fully to the adjacent page, then recentre on the new month with no animation
+    /// (so there's no visible jump) — the classic 3-page carousel commit.
+    private func slideAndCommit(dir: Int, to offset: CGFloat) {
+        withAnimation(.easeOut(duration: 0.22)) { dragOffset = offset }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.23) {
+            var txn = Transaction(); txn.disablesAnimations = true
+            withTransaction(txn) {
+                selectedDate = addMonths(dir)
+                dragOffset = 0
+            }
         }
     }
 
@@ -216,43 +241,53 @@ struct CalendarView: View {
     // MARK: - Month view
 
     private var monthView: some View {
-        let g = MonthGridBuilder.make(for: selectedDate, calendar: cal)
+        let symbols = MonthGridBuilder.make(for: selectedDate, calendar: cal).weekdaySymbols
+        let gridHeight: CGFloat = 48 * 6
         return VStack(spacing: 0) {
             HStack(spacing: 0) {
-                ForEach(Array(g.weekdaySymbols.enumerated()), id: \.offset) { _, sym in
+                ForEach(Array(symbols.enumerated()), id: \.offset) { _, sym in
                     Text(sym).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                 }
             }
             .padding(.vertical, 6)
             Divider()
-            // Compact month grid up top — swipe left/right to page months…
-            VStack(spacing: 0) {
-                ForEach(0..<6, id: \.self) { row in
-                    HStack(spacing: 0) {
-                        ForEach(g.weeks[row]) { day in
-                            monthCell(day, height: 48)
-                        }
-                    }
+            // Interactive 3-page month pager (prev | current | next) that follows the finger.
+            GeometryReader { geo in
+                let w = geo.size.width
+                HStack(spacing: 0) {
+                    monthGrid(for: addMonths(-1)).frame(width: w)
+                    monthGrid(for: selectedDate).frame(width: w)
+                    monthGrid(for: addMonths(1)).frame(width: w)
                 }
+                .offset(x: -w + dragOffset)
+                .gesture(
+                    DragGesture(minimumDistance: 10)
+                        .onChanged { value in
+                            if abs(value.translation.width) > abs(value.translation.height) { dragOffset = value.translation.width }
+                        }
+                        .onEnded { value in endMonthDrag(value.translation.width, width: w) }
+                )
+                .onAppear { pageWidth = w }
             }
-            .id(monthKey)
-            .transition(.asymmetric(
-                insertion: .move(edge: slideEdge).combined(with: .opacity),
-                removal: .move(edge: slideEdge == .trailing ? .leading : .trailing).combined(with: .opacity)))
-            .gesture(
-                DragGesture(minimumDistance: 24)
-                    .onEnded { value in
-                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                        if value.translation.width < -40 { step(1) }       // swipe left → next month
-                        else if value.translation.width > 40 { step(-1) }  // swipe right → previous month
-                    }
-            )
+            .frame(height: gridHeight)
+            .clipped()
             Divider()
             // …with the selected day's agenda listed below (Apple-Calendar month layout).
             agendaList
         }
-        .clipped() // contain the sliding month within the calendar area
+    }
+
+    /// The 6×7 month grid for `date` (one pager page).
+    private func monthGrid(for date: Date) -> some View {
+        let g = MonthGridBuilder.make(for: date, calendar: cal)
+        return VStack(spacing: 0) {
+            ForEach(0..<6, id: \.self) { row in
+                HStack(spacing: 0) {
+                    ForEach(g.weeks[row]) { day in monthCell(day, height: 48) }
+                }
+            }
+        }
     }
 
     /// Agenda for the selected day, beneath the month grid: time-sorted rows of that day's events/due
