@@ -47,6 +47,9 @@ struct TodayView: View {
     @State private var searchText = ""
     /// AI search result (P4-7): the structured filter applied locally. Nil ⇒ plain text contains.
     @State private var aiFilter: AISearchFilter?
+    /// AI morning brief surfaced on Today (FR-TODAY-120) — generated on tap, cached for the session.
+    @State private var briefText = ""
+    @State private var briefing = false
 
     var body: some View {
         NavigationStack {
@@ -82,6 +85,7 @@ struct TodayView: View {
                             .padding(.horizontal, theme.spacing.xl)
                         }
                         nextUpCard
+                        morningBriefCard
                         taskList
                     }
                 }
@@ -242,6 +246,48 @@ struct TodayView: View {
                 }
                 .accessibilityElement(children: .combine)
             }
+        }
+    }
+
+    /// Compact AI "Morning brief" card (FR-TODAY-120), shown only with AI consent. Generates on tap and
+    /// is cached in @State for the session so it doesn't burn the token budget on every appearance.
+    @ViewBuilder
+    private var morningBriefCard: some View {
+        if services.aiConsentEnabled {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sun.max.fill").foregroundStyle(.orange)
+                    Text("Morning brief").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Spacer()
+                    if briefing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button(briefText.isEmpty ? "Generate" : "Refresh") { streamBrief() }.font(.caption)
+                    }
+                }
+                if !briefText.isEmpty {
+                    Text(briefText).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(12)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, theme.spacing.xl)
+            .padding(.bottom, theme.spacing.sm)
+        }
+    }
+
+    private func streamBrief() {
+        Task {
+            briefing = true
+            briefText = ""
+            do {
+                for try await event in await services.briefStream() {
+                    if case let .text(delta) = event { briefText += delta }
+                }
+            } catch {
+                if briefText.isEmpty { briefText = "Couldn't generate a brief right now." }
+            }
+            briefing = false
         }
     }
 
