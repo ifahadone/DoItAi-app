@@ -163,6 +163,17 @@ struct TodayView: View {
         if !filter.priorities.isEmpty, !filter.priorities.map(\.asPriority).contains(task.priority) { return false }
         if let before = filter.dueBefore, let due = task.dueAt, due > before { return false }
         if let after = filter.dueAfter, let due = task.dueAt, due < after { return false }
+        // Honor the AI filter's tag + list hints locally (FR-SRCH-070): the task must carry every
+        // requested tag, and (if a list is hinted) belong to a list whose name matches.
+        if !filter.tags.isEmpty {
+            let taskTags = Set(tagNames(for: task).map { $0.lowercased() })
+            let wanted = Set(filter.tags.map { $0.lowercased() })
+            if !wanted.isSubset(of: taskTags) { return false }
+        }
+        if let hint = filter.listHint, !hint.isEmpty {
+            let listName = list(for: task)?.name ?? ""
+            if !listName.localizedCaseInsensitiveContains(hint) { return false }
+        }
         return true
     }
 

@@ -21,7 +21,12 @@ struct ListDetailView: View {
     @State private var showSharing = false
     @State private var showPaywall = false
 
-    private var tasksInList: [TaskModel] { allTasks.filter { $0.listId == list.id } }
+    /// Tasks in this list, ordered by manual `rank` (then newest-first as a tiebreak) so drag-to-reorder
+    /// sticks (FR-TASK-150).
+    private var tasksInList: [TaskModel] {
+        allTasks.filter { $0.listId == list.id }
+            .sorted { $0.rank != $1.rank ? $0.rank < $1.rank : $0.createdAt > $1.createdAt }
+    }
 
     var body: some View {
         List {
@@ -45,10 +50,12 @@ struct ListDetailView: View {
                     }
                 }
             }
+            .onMove(perform: move)
         }
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) { EditButton() }
             ToolbarItem(placement: .primaryAction) {
                 Button { newTitle = ""; isCreating = true } label: { Image(systemName: "plus") }
                     .accessibilityLabel("Add task to list")
@@ -90,6 +97,16 @@ struct ListDetailView: View {
 
     private func toggle(_ task: TaskModel) async { await mutation.toggleComplete(task); await syncIfLive() }
     private func delete(_ task: TaskModel) async { await mutation.delete(task); await syncIfLive() }
+
+    /// Drag-to-reorder: reassign each task's `rank` to its new index (FR-TASK-150).
+    private func move(from source: IndexSet, to destination: Int) {
+        var ordered = tasksInList
+        ordered.move(fromOffsets: source, toOffset: destination)
+        Task {
+            for (index, task) in ordered.enumerated() { await mutation.setRank(task, index) }
+            await syncIfLive()
+        }
+    }
 
     private func addTask() async {
         let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)

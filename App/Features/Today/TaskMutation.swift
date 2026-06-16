@@ -127,6 +127,12 @@ struct TaskMutation {
         await patch(task, fields: ["estimatedMinutes": minutes.map { AnyCodable.int($0) } ?? .null]) { $0.estimatedMinutes = minutes }
     }
 
+    /// Set the task's manual sort position within its list (FR-TASK-150).
+    func setRank(_ task: TaskModel, _ rank: Int) async {
+        guard rank != task.rank else { return }
+        await patch(task, fields: ["rank": .int(rank)]) { $0.rank = rank }
+    }
+
     /// Add focus-timer minutes to the task's logged `actualMinutes` (P2-4).
     func addActualMinutes(_ task: TaskModel, _ minutes: Int) async {
         guard minutes > 0 else { return }
