@@ -27,9 +27,12 @@ struct CalendarView: View {
     @State private var scale: Scale = .day
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var selectedTask: TaskModel?
-    /// Interactive month-pager drag offset (follows the finger) + the measured page width.
+    /// Finger-tracking pager (month + week): live drag offset + measured page width, plus guards so a
+    /// commit-in-flight isn't re-entered and only horizontal-dominant drags page.
     @State private var dragOffset: CGFloat = 0
     @State private var pageWidth: CGFloat = 0
+    @State private var isPaging = false
+    @State private var isHorizontalDrag = false
 
     private var cal: Calendar { Calendar.current }
     private var today: Date { cal.startOfDay(for: services.clock.now()) }
@@ -63,7 +66,7 @@ struct CalendarView: View {
                 Text(title).font(.title3.weight(.semibold))
                 Spacer()
                 Button { step(-1) } label: { Image(systemName: "chevron.left") }
-                Button("Today") { withAnimation { selectedDate = today } }
+                Button("Today") { if !isPaging { withAnimation { selectedDate = today } } }
                     .font(.subheadline)
                 Button { step(1) } label: { Image(systemName: "chevron.right") }
             }
@@ -92,35 +95,95 @@ struct CalendarView: View {
     }
 
     private func step(_ direction: Int) {
-        if scale == .month {
-            if pageWidth > 0 { slideAndCommit(dir: direction, to: direction > 0 ? -pageWidth : pageWidth) }
-            else { withAnimation(.easeInOut(duration: 0.25)) { selectedDate = addMonths(direction) } }
+        if scale == .day {
+            if let next = cal.date(byAdding: .day, value: direction, to: selectedDate) {
+                withAnimation(.easeInOut(duration: 0.28)) { selectedDate = cal.startOfDay(for: next) }
+            }
             return
         }
-        let component: Calendar.Component = scale == .day ? .day : .weekOfYear
-        if let next = cal.date(byAdding: component, value: direction, to: selectedDate) {
-            withAnimation(.easeInOut(duration: 0.28)) { selectedDate = cal.startOfDay(for: next) }
+        guard !isPaging else { return } // ignore chevron taps while a page commit is in flight
+        if pageWidth > 0 { slideAndCommit(dir: direction, to: direction > 0 ? -pageWidth : pageWidth) }
+        else { withAnimation(.easeInOut(duration: 0.25)) { advance(dir: direction) } }
+    }
+
+    /// Advance the paging anchor by one page of the current scale. Month normalizes to the 1st so
+    /// forward/back paging round-trips exactly (Calendar's month-add otherwise clamps Jan 31 → Feb 28,
+    /// drifting the selected day).
+    private func advance(dir: Int) {
+        switch scale {
+        case .month:
+            selectedDate = firstOfMonth(addMonths(dir))
+        case .week:
+            if let next = cal.date(byAdding: .weekOfYear, value: dir, to: selectedDate) {
+                selectedDate = cal.startOfDay(for: next)
+            }
+        case .day:
+            break
         }
     }
 
-    /// End-of-drag decision for the month pager: past a quarter-width, page; else snap back.
-    private func endMonthDrag(_ dx: CGFloat, width w: CGFloat) {
+    private func firstOfMonth(_ date: Date) -> Date {
+        cal.date(from: cal.dateComponents([.year, .month], from: date)) ?? cal.startOfDay(for: date)
+    }
+
+    /// End-of-drag decision for the carousel: only page on a horizontal-dominant drag past a
+    /// quarter-width; otherwise snap back. Clears the horizontal-drag flag.
+    private func endPageDrag(_ dx: CGFloat, width w: CGFloat) {
+        let horizontal = isHorizontalDrag
+        isHorizontalDrag = false
+        guard horizontal else { withAnimation(.easeOut(duration: 0.2)) { dragOffset = 0 }; return }
         let threshold = w / 4
         if dx < -threshold { slideAndCommit(dir: 1, to: -w) }
         else if dx > threshold { slideAndCommit(dir: -1, to: w) }
         else { withAnimation(.easeOut(duration: 0.2)) { dragOffset = 0 } }
     }
 
-    /// Animate the strip fully to the adjacent page, then recentre on the new month with no animation
-    /// (so there's no visible jump) — the classic 3-page carousel commit.
+    /// Animate the strip to the adjacent page, then recentre on the new page with animations disabled —
+    /// driven by the animation's own completion (no timer/clock race) and guarded against re-entry and
+    /// a mid-flight scale switch.
     private func slideAndCommit(dir: Int, to offset: CGFloat) {
-        withAnimation(.easeOut(duration: 0.22)) { dragOffset = offset }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.23) {
+        guard !isPaging else { return }
+        isPaging = true
+        let startScale = scale
+        withAnimation(.easeOut(duration: 0.22)) {
+            dragOffset = offset
+        } completion: {
             var txn = Transaction(); txn.disablesAnimations = true
             withTransaction(txn) {
-                selectedDate = addMonths(dir)
+                if scale == startScale { advance(dir: dir) }
                 dragOffset = 0
             }
+            isPaging = false
+        }
+    }
+
+    /// Generic finger-tracking 3-page carousel (prev | current | next) shared by month + week. The drag
+    /// is `.simultaneousGesture` + horizontal-dominance-gated so each page's inner vertical scroll still
+    /// works; pages commit through ``slideAndCommit``.
+    private func pagingStrip<Page: View>(@ViewBuilder page: @escaping (Int) -> Page) -> some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            HStack(spacing: 0) {
+                page(-1).frame(width: w)
+                page(0).frame(width: w)
+                page(1).frame(width: w)
+            }
+            .offset(x: -w + dragOffset)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { value in
+                        guard !isPaging else { return }
+                        if abs(value.translation.width) > abs(value.translation.height) {
+                            isHorizontalDrag = true
+                            dragOffset = value.translation.width
+                        }
+                    }
+                    .onEnded { value in
+                        guard !isPaging else { return }
+                        endPageDrag(value.translation.width, width: w)
+                    }
+            )
+            .onAppear { pageWidth = w }
         }
     }
 
@@ -145,8 +208,16 @@ struct CalendarView: View {
 
     // MARK: - Week view
 
+    /// Week view as the shared finger-tracking 3-page carousel (prev | current | next). The horizontal
+    /// pager drag is dominance-gated + `.simultaneousGesture`, so each page's vertical timeline still
+    /// scrolls; paging shifts `selectedDate` by a week and recentres seamlessly (no TabView snap-flash).
     private var weekView: some View {
-        let days = weekDays(of: selectedDate)
+        pagingStrip { offset in weekPageView(forOffset: offset) }
+    }
+
+    private func weekPageView(forOffset n: Int) -> some View {
+        let base = cal.date(byAdding: .weekOfYear, value: n, to: selectedDate) ?? selectedDate
+        let days = weekDays(of: base)
         let grid = DayGridLayout(hourHeight: 44)
         return VStack(spacing: 0) {
             weekHeader(days)
@@ -253,25 +324,9 @@ struct CalendarView: View {
             .padding(.vertical, 6)
             Divider()
             // Interactive 3-page month pager (prev | current | next) that follows the finger.
-            GeometryReader { geo in
-                let w = geo.size.width
-                HStack(spacing: 0) {
-                    monthGrid(for: addMonths(-1)).frame(width: w)
-                    monthGrid(for: selectedDate).frame(width: w)
-                    monthGrid(for: addMonths(1)).frame(width: w)
-                }
-                .offset(x: -w + dragOffset)
-                .gesture(
-                    DragGesture(minimumDistance: 10)
-                        .onChanged { value in
-                            if abs(value.translation.width) > abs(value.translation.height) { dragOffset = value.translation.width }
-                        }
-                        .onEnded { value in endMonthDrag(value.translation.width, width: w) }
-                )
-                .onAppear { pageWidth = w }
-            }
-            .frame(height: gridHeight)
-            .clipped()
+            pagingStrip { offset in monthGrid(for: addMonths(offset)) }
+                .frame(height: gridHeight)
+                .clipped()
             Divider()
             // …with the selected day's agenda listed below (Apple-Calendar month layout).
             agendaList
@@ -479,8 +534,9 @@ struct CalendarView: View {
     private func syncIfLive() async { if AppConfig.isLiveSync { await services.syncOnce() } }
 
     private func date(atMinute minute: Int, on day: Date) -> Date {
-        let startOfDay = cal.startOfDay(for: day)
-        return cal.date(byAdding: .minute, value: max(0, min(1440, minute)), to: startOfDay) ?? startOfDay
+        // Resolve the wall-clock time via components (DST-correct) rather than adding minutes to midnight.
+        let m = max(0, min(1439, minute))
+        return cal.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: day) ?? cal.startOfDay(for: day)
     }
     private func minuteOfDay(_ d: Date) -> Int {
         let c = cal.dateComponents([.hour, .minute], from: d); return (c.hour ?? 0) * 60 + (c.minute ?? 0)
