@@ -28,6 +28,11 @@ struct ListsView: View {
             List {
                 Section {
                     NavigationLink {
+                        SearchView()
+                    } label: {
+                        Label("Search", systemImage: "magnifyingglass")
+                    }
+                    NavigationLink {
                         RoutinesView()
                     } label: {
                         Label("Routines & Habits", systemImage: "repeat")

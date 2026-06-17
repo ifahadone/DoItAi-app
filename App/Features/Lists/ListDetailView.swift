@@ -18,6 +18,7 @@ struct ListDetailView: View {
     @State private var selectedTask: TaskModel?
     @State private var isCreating = false
     @State private var newTitle = ""
+    @State private var query = ""
     @State private var showSharing = false
     @State private var showPaywall = false
     /// Multi-select for bulk edit in edit mode (FR-TASK-170).
@@ -27,7 +28,10 @@ struct ListDetailView: View {
     /// Tasks in this list, ordered by manual `rank` (then newest-first as a tiebreak) so drag-to-reorder
     /// sticks (FR-TASK-150).
     private var tasksInList: [TaskModel] {
-        allTasks.filter { $0.listId == list.id }
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return allTasks
+            .filter { $0.listId == list.id }
+            .filter { q.isEmpty || $0.title.localizedCaseInsensitiveContains(q) || ($0.notes?.localizedCaseInsensitiveContains(q) ?? false) }
             .sorted { a, b in
                 if a.rank != b.rank { return a.rank < b.rank }
                 return a.createdAt > b.createdAt
@@ -60,6 +64,7 @@ struct ListDetailView: View {
         }
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search this list")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { EditButton() }
             ToolbarItem(placement: .primaryAction) {
