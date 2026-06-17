@@ -19,6 +19,7 @@ struct InsightsView: View {
     private var lists: [TaskListModel]
 
     @State private var range: AnalyticsRange = .week
+    @State private var showAssistant = false
 
     enum AnalyticsRange: String, CaseIterable, Identifiable {
         case week = "Week", month = "Month"
@@ -31,6 +32,7 @@ struct InsightsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: theme.spacing.lg) {
                     summary
+                    reviewCard
                     analytics
                     if habits.isEmpty {
                         EmptyStateView(title: "No habits yet", systemImage: "flame",
@@ -44,7 +46,34 @@ struct InsightsView: View {
                 .padding()
             }
             .navigationTitle("Insights")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showAssistant = true } label: { Image(systemName: "sparkles") }
+                        .accessibilityLabel("AI assistant & weekly review")
+                }
+            }
+            .sheet(isPresented: $showAssistant) {
+                AIAssistantView().environment(services)
+            }
         }
+    }
+
+    /// Entry to the weekly AI review (AppSpec S14 primary action), surfaced from Insights rather than
+    /// only from Today. Opening the assistant guides the user to enable AI if consent is off.
+    private var reviewCard: some View {
+        Button { showAssistant = true } label: {
+            cardShell("Weekly review", systemImage: "sparkles") {
+                HStack {
+                    Text(services.aiConsentEnabled
+                         ? "Generate an AI summary of your week."
+                         : "Turn on AI to generate a weekly review.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var summary: some View {
@@ -87,21 +116,56 @@ struct InsightsView: View {
         .pickerStyle(.segmented)
 
         if stats.count < 3 {
-            EmptyStateView(title: "Not enough data yet", systemImage: "chart.bar",
-                           message: "Create and complete a few tasks to see your insights.")
-                .frame(minHeight: 160)
+            // Progressive empty state (AppSpec S14): the message escalates with how much data exists.
+            EmptyStateView(
+                title: stats.isEmpty ? "Your insights start here" : "Almost there",
+                systemImage: "chart.bar",
+                message: stats.isEmpty
+                    ? "Add a few tasks and complete them — patterns appear after your first couple of days."
+                    : "Keep logging. A couple more scheduled or completed tasks unlock your trends."
+            )
+            .frame(minHeight: 160)
         } else {
             let completion = Analytics.completion(stats, in: interval, now: now)
             let byHour = Analytics.productivityByHour(stats, calendar: .current)
             let byList = Analytics.timeByList(stats)
             let backlog = Analytics.backlog(stats, now: now)
             let focus = Analytics.focus(stats)
+            let eva = estimateVsActual
 
             completionCard(completion)
+            if eva.count > 0 { estimateVsActualCard(eva) }
             productivityCard(byHour)
             if !byList.isEmpty { timeAllocationCard(byList) }
             backlogCard(backlog)
             if focus.sessions > 0 { focusCard(focus) }
+        }
+    }
+
+    /// Planned (scheduled block duration) vs logged minutes, over tasks that have both — drives the
+    /// estimate-accuracy card. Computed locally from the live tasks (no server aggregation needed).
+    private var estimateVsActual: (planned: Int, actual: Int, count: Int) {
+        var planned = 0, actual = 0, count = 0
+        for task in tasks where task.actualMinutes != nil {
+            guard let start = task.scheduledStart, let end = task.scheduledEnd else { continue }
+            let mins = max(0, Int(end.timeIntervalSince(start) / 60))
+            guard mins > 0 else { continue }
+            planned += mins
+            actual += task.actualMinutes ?? 0
+            count += 1
+        }
+        return (planned, actual, count)
+    }
+
+    private func estimateVsActualCard(_ e: (planned: Int, actual: Int, count: Int)) -> some View {
+        let ofPlan = e.planned > 0 ? Int((Double(e.actual) / Double(e.planned)) * 100) : nil
+        return cardShell("Estimate vs actual", systemImage: "scalemass") {
+            HStack(spacing: theme.spacing.lg) {
+                metric("\(e.planned)m", "Planned")
+                metric("\(e.actual)m", "Actual")
+                metric(ofPlan.map { "\($0)%" } ?? "—", "Of plan")
+                metric("\(e.count)", "Blocks")
+            }
         }
     }
 
@@ -144,12 +208,38 @@ struct InsightsView: View {
     }
 
     private func timeAllocationCard(_ slices: [Analytics.TimeSlice]) -> some View {
-        cardShell("Time by list", systemImage: "chart.pie") {
-            Chart(slices.prefix(6).map { $0 }) { slice in
-                BarMark(x: .value("Minutes", slice.minutes), y: .value("List", listName(slice.listId)))
-                    .foregroundStyle(theme.colors.accent)
+        let top = Array(slices.prefix(6))
+        let maxM = max(1, top.map { $0.minutes }.max() ?? 1)
+        return cardShell("Time by list", systemImage: "chart.pie") {
+            VStack(spacing: theme.spacing.sm) {
+                ForEach(top) { slice in
+                    allocationRow(slice, maxMinutes: maxM, list: lists.first { $0.id == slice.listId })
+                }
             }
-            .frame(height: CGFloat(min(slices.count, 6)) * 28 + 12)
+        }
+    }
+
+    /// A drill-down row: list name + proportional bar + minutes. Tapping a real list opens its tasks
+    /// (AppSpec S14 chart drill-down). The "No list" slice has no destination.
+    @ViewBuilder
+    private func allocationRow(_ slice: Analytics.TimeSlice, maxMinutes: Int, list: TaskListModel?) -> some View {
+        let row = HStack(spacing: theme.spacing.sm) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(listName(slice.listId)).font(.caption).foregroundStyle(.primary)
+                GeometryReader { geo in
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(theme.colors.accent.opacity(0.85))
+                        .frame(width: max(2, geo.size.width * CGFloat(slice.minutes) / CGFloat(maxMinutes)), height: 6)
+                }
+                .frame(height: 6)
+            }
+            Text("\(slice.minutes)m").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            if list != nil { Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary) }
+        }
+        if let list {
+            NavigationLink { ListDetailView(list: list) } label: { row }.buttonStyle(.plain)
+        } else {
+            row
         }
     }
 
