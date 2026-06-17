@@ -94,6 +94,8 @@ struct RootTabView: View {
     /// Tracks the selected tab so the center `+` can present Quick Add instead of "selecting" a tab.
     @Environment(AppServices.self) private var services
     @Environment(AuthService.self) private var auth
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selection: Tab
     @State private var showQuickAdd = false
     @State private var showFocusDemo = false
@@ -223,6 +225,12 @@ struct RootTabView: View {
                 selection = .today // bounce back; the + is an action, not a destination
             }
         }
+        // Widget/Control & Live-Activity actions hand off via the App Group (group.app.doit): a Quick-Add
+        // control raises a flag, and Live-Activity pause/stop write a focus command. We pick them up on
+        // foreground. (No-op until the App Group entitlement exists — see Widget/README.)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { processWidgetControls() }
+        }
         .sheet(isPresented: $showQuickAdd) {
             QuickAddView()
                 .environment(auth)
@@ -230,6 +238,42 @@ struct RootTabView: View {
         }
         .sheet(isPresented: $showFocusDemo) {
             FocusTimerView().environment(services)
+        }
+    }
+
+    /// Drain any pending widget/Live-Activity commands from the App Group on foreground.
+    private func processWidgetControls() {
+        guard let defaults = UserDefaults(suiteName: "group.app.doit") else { return }
+        if defaults.bool(forKey: "doit.pendingQuickAdd") {
+            defaults.set(false, forKey: "doit.pendingQuickAdd")
+            showQuickAdd = true
+        }
+        if let control = defaults.string(forKey: "doit.focusControl") {
+            defaults.removeObject(forKey: "doit.focusControl")
+            Task { await handleFocusControl(control) }
+        }
+    }
+
+    /// Apply a Live-Activity focus command ("toggle:<taskId>" / "stop:<taskId>") to the live session.
+    @MainActor private func handleFocusControl(_ control: String) async {
+        let action = control.split(separator: ":", maxSplits: 1).first.map(String.init) ?? control
+        switch action {
+        case "toggle":
+            guard let session = services.focus.session else { return }
+            session.isRunning ? services.focus.pause() : services.focus.resume()
+        case "stop":
+            guard let result = services.focus.stop() else { return }
+            let taskId = result.taskId
+            var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == taskId })
+            descriptor.fetchLimit = 1
+            if let task = try? modelContext.fetch(descriptor).first {
+                await TaskMutation(context: modelContext, engine: services.syncEngine,
+                                   clock: services.clock, idGenerator: services.idGenerator)
+                    .addActualMinutes(task, result.minutes)
+                if AppConfig.isLiveSync { await services.syncOnce() }
+            }
+        default:
+            break
         }
     }
 }
