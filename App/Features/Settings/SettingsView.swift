@@ -1,4 +1,8 @@
 import SwiftUI
+import UserNotifications
+#if canImport(UIKit)
+import UIKit
+#endif
 import DesignSystem
 
 /// App settings (P3-7 wiring). Currently: calendar write-back (mirror DoIT's scheduled blocks into
@@ -21,6 +25,8 @@ struct SettingsView: View {
     @State private var preparingExport = false
     @State private var exportURL: URL?
     @State private var showDeleteConfirm = false
+    @State private var notifStatus: UNAuthorizationStatus = .notDetermined
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         NavigationStack {
@@ -91,8 +97,24 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Button("Enable reminders & alarms") {
-                        Task { await services.requestNotificationAuthorization() }
+                    if notifStatus == .denied {
+                        Button {
+                            #if canImport(UIKit)
+                            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                            #endif
+                        } label: {
+                            Label("Notifications are off — open iOS Settings", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                        }
+                    } else {
+                        Button("Enable reminders & alarms") {
+                            Task { await services.requestNotificationAuthorization(); await refreshNotifStatus() }
+                        }
+                    }
+                    Button {
+                        Task { await NotificationScheduler().scheduleTest() }
+                    } label: {
+                        Label("Send a test notification", systemImage: "bell.badge")
                     }
                 } header: {
                     Text("Notifications")
@@ -138,7 +160,12 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .task { await refreshNotifStatus() }
         }
+    }
+
+    private func refreshNotifStatus() async {
+        notifStatus = await NotificationScheduler().authorizationStatus()
     }
 
     private func exportNow() async {

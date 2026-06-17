@@ -65,6 +65,18 @@ struct RoutineMutation {
         ))
     }
 
+    /// Duplicate a routine/habit as a new "… copy" with the same steps, schedule, and settings — a
+    /// fresh entity via the normal create path (so it syncs as a create, not a clone of the original).
+    @discardableResult
+    func duplicate(_ routine: RoutineModel) async -> String {
+        await create(
+            name: routine.name.isEmpty ? "Routine copy" : "\(routine.name) copy",
+            isHabit: routine.isHabit, steps: routine.steps, anchorTime: routine.anchorTime,
+            recurrence: routine.recurrence, chained: routine.chained, graceDays: routine.graceDays,
+            colorHex: routine.colorHex
+        )
+    }
+
     func delete(_ routine: RoutineModel) async {
         let now = clock.now()
         let op = OutboxOp(opId: idGenerator.newID(), entityType: .routine, entityId: routine.id, op: .delete,

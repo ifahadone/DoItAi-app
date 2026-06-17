@@ -47,6 +47,8 @@ struct RoutinesView: View {
                         .buttonStyle(.plain)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) { Task { await delete(routine) } } label: { Label("Delete", systemImage: "trash") }
+                            Button { Task { await mutation.duplicate(routine) } } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+                                .tint(.indigo)
                         }
                 }
             }

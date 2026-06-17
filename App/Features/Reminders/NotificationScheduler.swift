@@ -56,4 +56,22 @@ struct NotificationScheduler {
     func pendingCount() async -> Int {
         await center.pendingNotificationRequests().filter { $0.identifier.hasPrefix(identifierPrefix) }.count
     }
+
+    /// Current notification authorization status, so Settings can show a corrective "open Settings" CTA
+    /// when the user has denied permission (reminders/alarms can't deliver until they re-enable it).
+    func authorizationStatus() async -> UNAuthorizationStatus {
+        await center.notificationSettings().authorizationStatus
+    }
+
+    /// Fire a one-off test notification a few seconds out so the user can confirm delivery + sound
+    /// before relying on reminders (AppSpec S09 "test notification").
+    func scheduleTest() async {
+        let content = UNMutableNotificationContent()
+        content.title = "DoIT test"
+        content.body = "Notifications are working — reminders will arrive like this."
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 4, repeats: false)
+        try? await center.add(UNNotificationRequest(identifier: "test-\(UUID().uuidString)",
+                                                     content: content, trigger: trigger))
+    }
 }
