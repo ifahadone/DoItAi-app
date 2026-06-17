@@ -610,6 +610,23 @@ struct ArcDial: View {
                         // Recessed track groove.
                         ctx.stroke(fullRing(layout.center, trackR), with: .color(.gray.opacity(0.16)),
                                    style: StrokeStyle(lineWidth: band, lineCap: .round))
+                        // Clock face — hour numbers (every 3h) + minor ticks just outside the ring, so
+                        // the whole day reads like a real 24-hour clock at a glance.
+                        for hour in 0..<24 {
+                            let labeled = hour % 3 == 0
+                            let outerPt = layout.point(forMinute: hour * 60, radius: r * 0.925)
+                            let innerPt = layout.point(forMinute: hour * 60, radius: r * (labeled ? 0.895 : 0.905))
+                            ctx.stroke(Path { $0.move(to: innerPt); $0.addLine(to: outerPt) },
+                                       with: .color(.secondary.opacity(labeled ? 0.55 : 0.30)),
+                                       lineWidth: labeled ? 1.2 : 0.75)
+                            if labeled {
+                                let lp = layout.point(forMinute: hour * 60, radius: r * 0.965)
+                                var label = ctx.resolve(Text(SectographLayout.clockLabel(forHour: hour))
+                                    .font(.system(size: max(8, r * 0.058), weight: .medium)))
+                                label.shading = .color(.secondary)
+                                ctx.draw(label, at: lp, anchor: .center)
+                            }
+                        }
                         for item in blocks {
                             let base = Color(hex: item.colorHex) ?? .accentColor
                             let current = haloContains(now, item)

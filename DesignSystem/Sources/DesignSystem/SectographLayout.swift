@@ -157,6 +157,18 @@ public struct SectographLayout: Equatable, Sendable {
             return minute >= item.startMinute || minute < item.endMinute
         }
     }
+
+    /// Clock-face label for an hour on the 24h dial — "12a", "6a", "12p", "9p" (12-hour with a/p
+    /// suffix). Used by the dial's hour ring so the day reads like a real clock.
+    public static func clockLabel(forHour hour: Int) -> String {
+        let h = ((hour % 24) + 24) % 24
+        switch h {
+        case 0: return "12a"
+        case 12: return "12p"
+        case let x where x < 12: return "\(x)a"
+        default: return "\(h - 12)p"
+        }
+    }
 }
 
 // MARK: - Label-placement geometry (pure, testable)

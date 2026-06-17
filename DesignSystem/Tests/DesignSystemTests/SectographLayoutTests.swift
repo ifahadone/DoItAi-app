@@ -7,6 +7,15 @@ final class SectographLayoutTests: XCTestCase {
     private let layout = SectographLayout(size: CGSize(width: 200, height: 200), ringWidth: 20)
     private let halfPi = Double.pi / 2
 
+    func testClockLabels() {
+        XCTAssertEqual(SectographLayout.clockLabel(forHour: 0), "12a")
+        XCTAssertEqual(SectographLayout.clockLabel(forHour: 6), "6a")
+        XCTAssertEqual(SectographLayout.clockLabel(forHour: 12), "12p")
+        XCTAssertEqual(SectographLayout.clockLabel(forHour: 15), "3p")
+        XCTAssertEqual(SectographLayout.clockLabel(forHour: 21), "9p")
+        XCTAssertEqual(SectographLayout.clockLabel(forHour: 24), "12a") // wraps
+    }
+
     func testCardinalAngles() {
         XCTAssertEqual(layout.angle(forMinute: 0), -halfPi, accuracy: 1e-9)      // midnight → top
         XCTAssertEqual(layout.angle(forMinute: 360), 0, accuracy: 1e-9)          // 6am → right

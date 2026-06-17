@@ -44,6 +44,8 @@ struct TodayView: View {
     @State private var showAssistant = false
     @State private var showDialPicker = false
     @State private var showQuickAdd = false
+    /// Minute under the finger while scrubbing the dial (drag to scan the day); nil when not scrubbing.
+    @State private var scrubMinute: Int?
     @State private var searchText = ""
     /// AI search result (P4-7): the structured filter applied locally. Nil ⇒ plain text contains.
     @State private var aiFilter: AISearchFilter?
@@ -75,10 +77,36 @@ struct TodayView: View {
                                         handleDialTap(CGPoint(x: v.location.x - ox, y: v.location.y - oy),
                                                       layout: layout, items: dialItems)
                                     })
+                                    // Scrub the dial like a clock dial: drag to scan any time + see what's
+                                    // scheduled there; release on a block opens it, on a free slot quick-adds.
+                                    .simultaneousGesture(
+                                        DragGesture(minimumDistance: 14)
+                                            .onChanged { v in
+                                                scrubMinute = layout.time(at: CGPoint(x: v.location.x - ox, y: v.location.y - oy))
+                                            }
+                                            .onEnded { _ in commitScrub(layout: layout, items: dialItems) })
                                     .simultaneousGesture(
                                         LongPressGesture(minimumDuration: 0.45).onEnded { _ in showDialPicker = true })
+                                    .overlay(alignment: .top) {
+                                        if let m = scrubMinute {
+                                            let info = dialReadout(at: m, layout: layout, items: dialItems)
+                                            HStack(spacing: 6) {
+                                                Text(info.time).font(.caption.weight(.semibold)).monospacedDigit()
+                                                if let title = info.title {
+                                                    Circle().fill(info.color).frame(width: 6, height: 6)
+                                                    Text(title).font(.caption).lineLimit(1)
+                                                } else {
+                                                    Text("Free").font(.caption).foregroundStyle(.secondary)
+                                                }
+                                            }
+                                            .padding(.horizontal, 10).padding(.vertical, 6)
+                                            .background(.regularMaterial, in: Capsule())
+                                            .overlay(Capsule().strokeBorder(theme.colors.separator.opacity(0.4)))
+                                            .allowsHitTesting(false)
+                                        }
+                                    }
                                     .accessibilityAddTraits(.isButton)
-                                    .accessibilityHint("Tap a block to open it, tap a free slot to add a task, long-press to change the dial style")
+                                    .accessibilityHint("Tap a block to open it, tap a free slot to add a task, drag around the dial to scan the day, long-press to change the dial style")
                             }
                             .frame(height: 240)
                             .padding(.top, theme.spacing.sm)
@@ -471,6 +499,33 @@ struct TodayView: View {
         } else if layout.ringContains(point) {
             showQuickAdd = true
         }
+    }
+
+    /// What the dial scrub readout shows at `minute`: the time + the block scheduled there (if any).
+    private func dialReadout(at minute: Int, layout: SectographLayout, items: [SectographItem]) -> (time: String, title: String?, color: Color) {
+        if let item = items.first(where: { layout.contains(minute: minute, $0) }) {
+            return (timeLabel(minute), dialTitles[item.id] ?? "Busy", Color(hex: item.colorHex) ?? theme.colors.accent)
+        }
+        return (timeLabel(minute), nil, theme.colors.accent)
+    }
+
+    /// On releasing a dial scrub: open the block under the finger, else quick-add at that free time.
+    private func commitScrub(layout: SectographLayout, items: [SectographItem]) {
+        defer { scrubMinute = nil }
+        guard let minute = scrubMinute else { return }
+        if let item = items.first(where: { layout.contains(minute: minute, $0) }),
+           let task = tasks.first(where: { $0.id == item.id }) {
+            selectedTask = task
+        } else {
+            showQuickAdd = true
+        }
+    }
+
+    /// "h:mm AM" for a minute-of-day (dial scrub readout).
+    private func timeLabel(_ minute: Int) -> String {
+        let m = max(0, min(1439, minute))
+        let date = Calendar.current.date(from: DateComponents(hour: m / 60, minute: m % 60)) ?? services.clock.now()
+        return date.formatted(date: .omitted, time: .shortened)
     }
 
     /// Calendar free/busy blocks for the dial overlay (P2-5): real EventKit data when authorized,
