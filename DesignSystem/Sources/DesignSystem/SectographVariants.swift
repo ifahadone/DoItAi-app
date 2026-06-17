@@ -575,6 +575,179 @@ struct ClassicDial: View {
 
 private func classicHM(_ minute: Int) -> String { String(format: "%d:%02d", (minute / 60) % 24, minute % 60) }
 
+// MARK: - Focus dial (the Sectograph watch-face surface for Focus mode)
+
+/// A focus-mode day dial in the Sectograph watch-face look (AppSpec §5.3): the 12-hour clock face with
+/// the day's blocks, the *focused* block glowing while the rest recede, a live now-hand, and a center
+/// hub showing the focus countdown + a progress ring. Pure/"dumb" — the caller owns the ticking and
+/// passes computed values (now, the timer string, progress), so this stays trivially testable and is
+/// reused unchanged by the Focus screen and any future Live Activity. Reuses the Classic dial's pure
+/// helpers (`annularWedge`, `pointAt`, `dialMinuteOfDay`, `haloDot`).
+public struct FocusDialView: View {
+    public let items: [SectographItem]
+    public let titles: [String: String]
+    /// Minute-of-day (0…1440) for the now-hand; the 12-hour face wraps it via the angle math.
+    public let nowMinute: Int
+    /// The block to emphasize (the task being focused). Others dim so it pops.
+    public let focusItemId: String?
+    public let centerTitle: String
+    public let centerTime: String
+    public let centerCaption: String
+    /// 0…1 fill of the hub progress ring.
+    public let progress: Double
+    public let accent: Color
+
+    public init(items: [SectographItem], titles: [String: String] = [:], nowMinute: Int,
+                focusItemId: String? = nil, centerTitle: String, centerTime: String,
+                centerCaption: String, progress: Double, accent: Color) {
+        self.items = items
+        self.titles = titles
+        self.nowMinute = nowMinute
+        self.focusItemId = focusItemId
+        self.centerTitle = centerTitle
+        self.centerTime = centerTime
+        self.centerCaption = centerCaption
+        self.progress = min(max(progress, 0), 1)
+        self.accent = accent
+    }
+
+    public var body: some View {
+        GeometryReader { geo in
+            let layout = SectographLayout(size: geo.size, ringWidth: 1, minutesPerDay: 720)
+            let r = layout.outerRadius
+            let faceR = r * 0.98
+            let inner = r * 0.42, outer = r * 0.86
+            let hubR = r * 0.36
+            ZStack {
+                Canvas { ctx, _ in
+                    drawFace(ctx, layout, faceR: faceR, r: r)
+                    for item in items where !item.isInstant {
+                        drawBlock(ctx, layout, item, inner: inner, outer: outer, r: r,
+                                  focused: item.id == focusItemId)
+                    }
+                    for item in items where item.isInstant {
+                        let from = layout.point(forMinute: item.startMinute, radius: inner)
+                        let to = layout.point(forMinute: item.startMinute, radius: outer)
+                        let on = item.id == focusItemId
+                        ctx.stroke(Path { $0.move(to: from); $0.addLine(to: to) },
+                                   with: .color((Color(hex: item.colorHex) ?? .red).opacity(on ? 1 : 0.55)),
+                                   style: StrokeStyle(lineWidth: on ? 2.4 : 1.6, lineCap: .round, dash: [3, 3]))
+                    }
+                    drawNowHand(ctx, layout, faceR: faceR)
+                }
+                centerHub(layout, hubR: hubR)
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .accessibilityElement()
+        .accessibilityLabel("Focus dial: \(centerTitle), \(centerCaption), \(centerTime)")
+    }
+
+    // 60 minute ticks (major every 5) + hour numerals 1…12, tuned for a black background.
+    private func drawFace(_ ctx: GraphicsContext, _ layout: SectographLayout, faceR: CGFloat, r: CGFloat) {
+        for i in 0..<60 {
+            let major = i % 5 == 0
+            let angle = -Double.pi / 2 + Double(i) / 60 * 2 * .pi
+            let o = pointAt(layout.center, angle, faceR)
+            let inn = pointAt(layout.center, angle, faceR - (major ? 8 : 4))
+            ctx.stroke(Path { $0.move(to: inn); $0.addLine(to: o) },
+                       with: .color(.white.opacity(major ? 0.5 : 0.18)), lineWidth: major ? 1 : 0.5)
+        }
+        for n in 1...12 {
+            let angle = -Double.pi / 2 + Double(n) / 12 * 2 * .pi
+            let p = pointAt(layout.center, angle, faceR * 0.9)
+            var t = ctx.resolve(Text("\(n)").font(.system(size: max(9, r * 0.075), weight: .medium)))
+            t.shading = .color(.white.opacity(0.65))
+            ctx.draw(t, at: p, anchor: .center)
+        }
+    }
+
+    private func drawBlock(_ ctx: GraphicsContext, _ layout: SectographLayout, _ item: SectographItem,
+                           inner: CGFloat, outer: CGFloat, r: CGFloat, focused: Bool) {
+        let base = Color(hex: item.colorHex) ?? .blue
+        let future = item.startMinute > nowMinute && !item.isDone
+        let wedge = annularWedge(layout, item.startMinute, item.endMinute, inner: inner, outer: outer, padDeg: 1)
+        if focused {
+            // Soft halo behind the focused block so it lifts off the face.
+            let halo = annularWedge(layout, item.startMinute, item.endMinute, inner: inner - 5, outer: outer + 5, padDeg: 0.5)
+            ctx.fill(halo, with: .color(accent.opacity(0.20)))
+        }
+        if future {
+            let col = focused ? base : base.opacity(0.4)
+            ctx.stroke(wedge, with: .color(col), style: StrokeStyle(lineWidth: focused ? 2.2 : 1.4, dash: [4, 3]))
+        } else {
+            let opacity = focused ? 1.0 : (item.isDone ? 0.22 : 0.42)
+            ctx.fill(wedge, with: .color(base.opacity(opacity)))
+        }
+        guard item.durationMinutes >= 35 else { return }
+        let mid = item.startMinute + item.durationMinutes / 2
+        let midAngle = layout.angle(forMinute: mid)
+        let flip = cos(midAngle) < 0
+
+        // Radial title along the spoke.
+        if let title = titles[item.id], !title.isEmpty {
+            let p = layout.point(forMinute: mid, radius: (inner + outer) / 2 + 3)
+            var t = ctx.resolve(Text(title).font(.system(size: max(8, r * 0.07), weight: .semibold)))
+            t.shading = .color(focused ? .white : (future ? base.opacity(0.7) : .white.opacity(0.55)))
+            var c = ctx
+            c.translateBy(x: p.x, y: p.y)
+            c.rotate(by: .radians(midAngle + (flip ? .pi : 0)))
+            c.draw(t, at: .zero, anchor: .center)
+        }
+    }
+
+    private func drawNowHand(_ ctx: GraphicsContext, _ layout: SectographLayout, faceR: CGFloat) {
+        let angle = layout.angle(forMinute: nowMinute)
+        let tip = pointAt(layout.center, angle, faceR * 0.9)
+        let dot = pointAt(layout.center, angle, faceR)
+        ctx.stroke(Path { $0.move(to: layout.center); $0.addLine(to: tip) },
+                   with: .color(accent), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+        ctx.stroke(Path { $0.move(to: tip); $0.addLine(to: dot) },
+                   with: .color(accent), style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
+        ctx.fill(haloDot(dot, 3.5), with: .color(accent))
+    }
+
+    private func centerHub(_ layout: SectographLayout, hubR: CGFloat) -> some View {
+        let ringW = max(3, hubR * 0.11)
+        let ringSize = hubR * 2 * 0.84
+        return ZStack {
+            Circle()
+                .fill(Color(white: 0.10))
+                .frame(width: hubR * 2, height: hubR * 2)
+                .overlay(Circle().strokeBorder(.white.opacity(0.10), lineWidth: 1))
+            Circle()
+                .stroke(.white.opacity(0.10), lineWidth: ringW)
+                .frame(width: ringSize, height: ringSize)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(accent, style: StrokeStyle(lineWidth: ringW, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .frame(width: ringSize, height: ringSize)
+            VStack(spacing: hubR * 0.02) {
+                Text(centerCaption)
+                    .font(.system(size: max(8, hubR * 0.18), weight: .semibold))
+                    .tracking(1.5)
+                    .foregroundStyle(accent)
+                    .lineLimit(1)
+                Text(centerTime)
+                    .font(.system(size: max(18, hubR * 0.52), weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
+                Text(centerTitle)
+                    .font(.system(size: max(8, hubR * 0.19), weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+            }
+            .minimumScaleFactor(0.5)
+            .frame(width: ringSize * 0.94)
+        }
+        .position(layout.center)
+        .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Arc (the flagship: a bold, deep gradient ring with the info in the center)
 
 private func fullRing(_ center: CGPoint, _ radius: CGFloat) -> Path {

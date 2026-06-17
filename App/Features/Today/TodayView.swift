@@ -440,29 +440,7 @@ struct TodayView: View {
     /// Map today's scheduled/due tasks to dial blocks (P2): scheduled ranges become arcs; a due-only
     /// task becomes a short marker sliver at its due time. Tinted by the task's list color.
     private var sectographItems: [SectographItem] {
-        let calendar = Calendar.current
-        let now = services.clock.now()
-        func minute(_ date: Date) -> Int? {
-            guard calendar.isDate(date, inSameDayAs: now) else { return nil }
-            let c = calendar.dateComponents([.hour, .minute], from: date)
-            return (c.hour ?? 0) * 60 + (c.minute ?? 0)
-        }
-        return tasks.compactMap { task in
-            let taskList = list(for: task)
-            let color = taskList?.colorHex
-            let icon = taskList?.icon
-            let done = task.status == .done
-            if let start = task.scheduledStart, let startMinute = minute(start) {
-                let endMinute = task.scheduledEnd.flatMap(minute) ?? min(1440, startMinute + 60)
-                return SectographItem(id: task.id, startMinute: startMinute, endMinute: endMinute,
-                                      colorHex: color, kind: .span, symbolName: icon, isDone: done)
-            } else if let due = task.dueAt, let dueMinute = minute(due) {
-                // Due-only tasks read as instant markers (a dashed spoke + the list icon), not fat arcs.
-                return SectographItem(id: task.id, startMinute: dueMinute, endMinute: min(1440, dueMinute + 20),
-                                      colorHex: color, kind: .instant, symbolName: icon, isDone: done)
-            }
-            return nil
-        }
+        DayDial.items(tasks: tasks, lists: lists, now: services.clock.now())
     }
 
     /// VoiceOver labels for the dial's blocks (P2-6) — "Title, at 9:00 AM".
@@ -483,11 +461,7 @@ struct TodayView: View {
 
     /// On-arc display titles for the dial blocks (P5-5 aurora) — keyed by item id, like `dialLabels`.
     private var dialTitles: [String: String] {
-        var result: [String: String] = [:]
-        for item in sectographItems {
-            if let task = tasks.first(where: { $0.id == item.id }) { result[item.id] = task.title }
-        }
-        return result
+        DayDial.titles(tasks: tasks, items: sectographItems)
     }
 
     /// Map a tap on the dial to an action: hit a block → open it; hit a free slot in the ring band →
