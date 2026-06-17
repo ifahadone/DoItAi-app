@@ -11,8 +11,13 @@ struct NoteEditorView: View {
 
     @Bindable var note: NoteModel
 
+    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil && !$0.archived && $0.statusRaw != 4 },
+           sort: \TaskModel.createdAt, order: .reverse)
+    private var tasks: [TaskModel]
+
     @State private var titleDraft = ""
     @State private var bodyDraft = ""
+    @State private var showTaskPicker = false
 
     var body: some View {
         Form {
@@ -32,6 +37,22 @@ struct NoteEditorView: View {
                         }
                     }
             }
+            Section("Linked task") {
+                if let linked = tasks.first(where: { $0.id == note.taskId }) {
+                    HStack {
+                        Image(systemName: "checklist").foregroundStyle(.secondary)
+                        Text(linked.title).lineLimit(1)
+                        Spacer()
+                        Button("Unlink", role: .destructive) { Task { await unlinkTask() } }
+                            .font(.caption)
+                    }
+                } else if note.taskId != nil {
+                    // Linked to a task not in the local store (archived / another device).
+                    Button("Unlink task", role: .destructive) { Task { await unlinkTask() } }
+                } else {
+                    Button { showTaskPicker = true } label: { Label("Link to a task", systemImage: "link") }
+                }
+            }
         }
         .navigationTitle("Note")
         .navigationBarTitleDisplayMode(.inline)
@@ -50,6 +71,37 @@ struct NoteEditorView: View {
             titleDraft = note.title
             bodyDraft = note.body
         }
+        .sheet(isPresented: $showTaskPicker) {
+            NavigationStack {
+                List {
+                    if tasks.isEmpty {
+                        Text("No tasks to link yet.").foregroundStyle(.secondary)
+                    }
+                    ForEach(tasks) { task in
+                        Button { Task { await linkTask(task) } } label: {
+                            Text(task.title).foregroundStyle(.primary).lineLimit(1)
+                        }
+                    }
+                }
+                .navigationTitle("Link to task")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showTaskPicker = false } }
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    private func linkTask(_ task: TaskModel) async {
+        await mutation.setTaskId(note, task.id)
+        await syncIfLive()
+        showTaskPicker = false
+    }
+
+    private func unlinkTask() async {
+        await mutation.setTaskId(note, nil)
+        await syncIfLive()
     }
 
     private var mutation: NoteMutation {

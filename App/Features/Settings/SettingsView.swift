@@ -27,6 +27,9 @@ struct SettingsView: View {
     @State private var showDeleteConfirm = false
     @State private var notifStatus: UNAuthorizationStatus = .notDetermined
     @Environment(\.openURL) private var openURL
+    @AppStorage("quietHoursEnabled") private var quietHoursEnabled = false
+    @AppStorage("quietHoursStart") private var quietStart = 1320 // 22:00
+    @AppStorage("quietHoursEnd") private var quietEnd = 420      // 07:00
 
     var body: some View {
         NavigationStack {
@@ -123,6 +126,18 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("Quiet hours", isOn: $quietHoursEnabled)
+                    if quietHoursEnabled {
+                        DatePicker("From", selection: timeBinding($quietStart), displayedComponents: .hourAndMinute)
+                        DatePicker("To", selection: timeBinding($quietEnd), displayedComponents: .hourAndMinute)
+                    }
+                } header: {
+                    Text("Quiet hours")
+                } footer: {
+                    Text("During quiet hours, reminders arrive silently (no sound, delivered to Notification Center) so they don't interrupt you.")
+                }
+
+                Section {
                     if let exportURL {
                         ShareLink("Share your data export", item: exportURL)
                     } else {
@@ -166,6 +181,20 @@ struct SettingsView: View {
 
     private func refreshNotifStatus() async {
         notifStatus = await NotificationScheduler().authorizationStatus()
+    }
+
+    /// Bridge a minute-of-day @AppStorage Int to a `DatePicker`'s `Date` (hour+minute only).
+    private func timeBinding(_ store: Binding<Int>) -> Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.date(bySettingHour: store.wrappedValue / 60,
+                                      minute: store.wrappedValue % 60, second: 0, of: Date()) ?? Date()
+            },
+            set: { newValue in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: newValue)
+                store.wrappedValue = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+            }
+        )
     }
 
     private func exportNow() async {

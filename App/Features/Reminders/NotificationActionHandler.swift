@@ -16,6 +16,7 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
     static let categoryId = "DOIT_REMINDER"
     static let completeActionId = "DOIT_COMPLETE"
     static let snoozeActionId = "DOIT_SNOOZE"
+    static let rescheduleActionId = "DOIT_RESCHEDULE"
     static let snoozeInterval: TimeInterval = 10 * 60
 
     private let container: ModelContainer
@@ -34,7 +35,8 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
         center.delegate = self
         let complete = UNNotificationAction(identifier: Self.completeActionId, title: "Complete", options: [])
         let snooze = UNNotificationAction(identifier: Self.snoozeActionId, title: "Snooze 10 min", options: [])
-        let category = UNNotificationCategory(identifier: Self.categoryId, actions: [complete, snooze],
+        let reschedule = UNNotificationAction(identifier: Self.rescheduleActionId, title: "Tomorrow", options: [])
+        let category = UNNotificationCategory(identifier: Self.categoryId, actions: [complete, snooze, reschedule],
                                               intentIdentifiers: [], options: [])
         center.setNotificationCategories([category])
     }
@@ -78,6 +80,20 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
             let request = UNNotificationRequest(identifier: "snooze-\(taskId)-\(services.idGenerator.newID())",
                                                 content: content, trigger: trigger)
             try? await UNUserNotificationCenter.current().add(request)
+        case Self.rescheduleActionId:
+            // Reschedule from the lock screen: push the task's due to tomorrow 9am (a real mutation that
+            // syncs + re-arms reminders), so a not-now reminder doesn't need the app to be opened.
+            let ctx = container.mainContext
+            var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == taskId })
+            descriptor.fetchLimit = 1
+            guard let task = try? ctx.fetch(descriptor).first else { return }
+            let cal = Calendar.current
+            let tomorrow = cal.date(byAdding: .day, value: 1, to: services.clock.now()) ?? services.clock.now()
+            let at = cal.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow) ?? tomorrow
+            let mutation = TaskMutation(context: ctx, engine: services.syncEngine,
+                                        clock: services.clock, idGenerator: services.idGenerator)
+            await mutation.reschedule(task, dueAt: at)
+            if AppConfig.isLiveSync { await services.syncOnce() }
         default:
             break // default tap (open app) — no deep-link target yet
         }

@@ -37,6 +37,12 @@ struct NotificationScheduler {
             content.title = item.title.isEmpty ? "Reminder" : item.title
             content.body = item.fireAt.formatted(date: .omitted, time: .shortened)
             content.sound = .default
+            // Quiet hours (Settings): deliver silently + passively so it lands in Notification Center
+            // without sound/banner interruption when it fires inside the user's quiet window.
+            if Self.inQuietHours(item.fireAt) {
+                content.sound = nil
+                content.interruptionLevel = .passive
+            }
             // Carry the Complete / Snooze action buttons + the ids the action handler resolves.
             content.categoryIdentifier = NotificationActionHandler.categoryId
             content.userInfo = ["taskId": item.taskId, "reminderId": item.reminderId]
@@ -61,6 +67,18 @@ struct NotificationScheduler {
     /// when the user has denied permission (reminders/alarms can't deliver until they re-enable it).
     func authorizationStatus() async -> UNAuthorizationStatus {
         await center.notificationSettings().authorizationStatus
+    }
+
+    /// Whether `date`'s wall-clock time falls in the user's configured quiet window (Settings). Wrap-
+    /// aware (e.g. 22:00→07:00 spans midnight). Defaults: disabled; 22:00–07:00 when enabled.
+    static func inQuietHours(_ date: Date, defaults: UserDefaults = .standard, calendar: Calendar = .current) -> Bool {
+        guard defaults.bool(forKey: "quietHoursEnabled") else { return false }
+        let start = defaults.object(forKey: "quietHoursStart") as? Int ?? 1320
+        let end = defaults.object(forKey: "quietHoursEnd") as? Int ?? 420
+        guard start != end else { return false }
+        let c = calendar.dateComponents([.hour, .minute], from: date)
+        let minute = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        return start < end ? (minute >= start && minute < end) : (minute >= start || minute < end)
     }
 
     /// Fire a one-off test notification a few seconds out so the user can confirm delivery + sound
