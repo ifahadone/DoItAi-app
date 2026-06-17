@@ -250,6 +250,16 @@ enum AppConfig {
         #endif
     }
 
+    /// DEBUG-only: `-forceOnboarding` shows the first-run onboarding even when signed in/onboarded or in
+    /// a demo launch, so the flow can be screenshot without clearing app state. Always `false` in release.
+    static var isForceOnboarding: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-forceOnboarding")
+        #else
+        return false
+        #endif
+    }
+
     /// DEBUG-only: `-startTab <today|plan|lists|insights>` (or the shorthand `-startLists`) opens the
     /// app on that tab instead of Today — lets any tab be screenshot without UI navigation. Returns the
     /// tab name, or `nil` for the default. Always `nil` in release.

@@ -50,6 +50,9 @@ struct DoITApp: App {
 /// Switches between the sign-in gate and the main shell based on auth state.
 private struct RootView: View {
     @Environment(AuthService.self) private var auth
+    /// First-run gate: signed-in users who haven't completed onboarding see it once before the shell.
+    /// Demo/automation launches bypass it so seeded screenshots land directly in the app.
+    @AppStorage("hasOnboarded") private var hasOnboarded = false
     #if DEBUG
     /// Drives the `-sectographGallery` debug picker. Presented as a sheet OVER the shell (not as the
     /// app root) so its Done button can dismiss back to the app — the gallery is never a dead-end.
@@ -70,11 +73,17 @@ private struct RootView: View {
     @ViewBuilder private var shell: some View {
         switch auth.state {
         case .unknown:
-            ProgressView("Loading…")
+            SplashView()
         case .signedOut:
             SignInView()
         case .signedIn:
-            RootTabView()
+            if AppConfig.isForceOnboarding {
+                OnboardingView()
+            } else if hasOnboarded || AppConfig.isRunningDemo {
+                RootTabView()
+            } else {
+                OnboardingView()
+            }
         }
     }
 }
@@ -88,6 +97,8 @@ struct RootTabView: View {
     @State private var selection: Tab
     @State private var showQuickAdd = false
     @State private var showFocusDemo = false
+    /// Set by onboarding's "Create your first task" so the shell opens Quick Add once on first appear.
+    @AppStorage("pendingFirstQuickAdd") private var pendingFirstQuickAdd = false
 
     enum Tab: Hashable { case today, plan, add, lists, insights }
 
@@ -135,8 +146,15 @@ struct RootTabView: View {
             // for all signed-in sessions (not just the dev demo mode).
             if AppConfig.isLiveSync { await services.syncOnce() }
             await services.publishAgenda() // refresh the agenda widget snapshot (P1-J)
-            // Ask for notification permission once the shell is up (reminders + alarm chains need it);
-            // self-guards against headless demo launches so the prompt can't block them.
+            // Guided first capture: onboarding's "Create your first task" queues this so the shell
+            // opens Quick Add once, right after onboarding completes.
+            if pendingFirstQuickAdd {
+                pendingFirstQuickAdd = false
+                showQuickAdd = true
+            }
+            // Ask for notification permission once the shell is up (reminders + alarm chains need it).
+            // The shell only appears after onboarding, so this is now a post-value ask, not cold-launch;
+            // it self-guards against headless demo launches so the prompt can't block them.
             await services.requestNotificationAuthorizationIfNeeded()
             // Refresh the Pro entitlement from the server (the authority for feature gates, P6-4).
             await services.entitlements.refresh()
