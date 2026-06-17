@@ -53,7 +53,9 @@ struct ListsView: View {
                             ListDetailView(list: list)
                         } label: {
                             ListHeader(name: list.name, systemImage: list.icon,
-                                       colorHex: list.colorHex, count: taskCount(for: list))
+                                       colorHex: list.colorHex, count: taskCount(for: list),
+                                       isShared: list.shareId != nil,
+                                       isJoined: list.shareId != nil && list.ownerId != ownerId)
                         }
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) { Task { await deleteList(list) } } label: {

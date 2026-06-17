@@ -97,18 +97,29 @@ public struct ListHeader: View {
     private let systemImage: String
     private let colorHex: String?
     private let count: Int?
+    private let isShared: Bool
+    private let isJoined: Bool
 
-    public init(name: String, systemImage: String = "list.bullet", colorHex: String? = nil, count: Int? = nil) {
+    public init(name: String, systemImage: String = "list.bullet", colorHex: String? = nil,
+                count: Int? = nil, isShared: Bool = false, isJoined: Bool = false) {
         self.name = name
         self.systemImage = systemImage
         self.colorHex = colorHex
         self.count = count
+        self.isShared = isShared
+        self.isJoined = isJoined
     }
 
     public var body: some View {
         HStack(spacing: theme.spacing.sm) {
             Image(systemName: systemImage).foregroundStyle(Color(hex: colorHex) ?? theme.colors.accent)
             Text(name).font(.headline)
+            if isShared {
+                Image(systemName: "person.2.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(isJoined ? "Shared with you" : "Shared list")
+            }
             Spacer(minLength: 0)
             if let count {
                 Text("\(count)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
