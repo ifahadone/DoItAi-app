@@ -33,6 +33,8 @@ struct CalendarView: View {
     @State private var pageWidth: CGFloat = 0
     @State private var isPaging = false
     @State private var isHorizontalDrag = false
+    /// EventKit free/busy authorization, refreshed on appear; drives the "Connect your calendar" card.
+    @State private var calendarAuthorized = false
 
     private var cal: Calendar { Calendar.current }
     private var today: Date { cal.startOfDay(for: services.clock.now()) }
@@ -51,6 +53,7 @@ struct CalendarView: View {
         .sheet(item: $selectedTask) { task in
             TaskDetailView(task: task).environment(auth).environment(services)
         }
+        .task { calendarAuthorized = services.calendar.isAuthorized }
         .onAppear {
             #if DEBUG
             if let s = AppConfig.calendarScale, let v = Scale(rawValue: s.capitalized) { scale = v }
@@ -191,6 +194,7 @@ struct CalendarView: View {
 
     private var dayView: some View {
         VStack(spacing: 0) {
+            calendarPermissionCard
             // TimelineView ticks each minute so the red now-line advances live (Apple-Calendar style).
             TimelineView(.periodic(from: Date(), by: 60)) { _ in
                 DayGridView(
@@ -206,6 +210,30 @@ struct CalendarView: View {
                 )
             }
             if !unscheduled.isEmpty { tray }
+        }
+    }
+
+    /// S07: ask for Apple Calendar access at the Plan moment (not up front), so the day grid can show
+    /// busy times. Device-bound — on the simulator the prompt no-ops, but the flow is wired here.
+    @ViewBuilder private var calendarPermissionCard: some View {
+        if !calendarAuthorized {
+            HStack(spacing: theme.spacing.sm) {
+                Image(systemName: "calendar.badge.exclamationmark").foregroundStyle(theme.colors.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Connect your calendar").font(.subheadline.weight(.medium))
+                    Text("See busy times from Apple Calendar here. Read on this device only.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Connect") {
+                    Task { calendarAuthorized = await services.calendar.requestAccess() }
+                }
+                .buttonStyle(.borderedProminent).controlSize(.small)
+            }
+            .padding(theme.spacing.md)
+            .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.medium))
+            .padding(.horizontal)
+            .padding(.top, theme.spacing.sm)
         }
     }
 
