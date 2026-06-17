@@ -77,6 +77,26 @@ struct RoutineMutation {
         )
     }
 
+    /// Suspend/resume a routine (sparse patch). Paused routines skip materialization + alarms.
+    func setPaused(_ routine: RoutineModel, _ paused: Bool) async {
+        guard routine.paused != paused else { return }
+        routine.paused = paused
+        routine.updatedAt = clock.now()
+        if routine.syncState == .synced { routine.syncState = .pendingUpdate }
+        try? context.save()
+        await enqueue(id: routine.id, baseVersion: routine.serverVersion, fields: ["paused": .bool(paused)])
+    }
+
+    /// Archive/unarchive a routine (sparse patch). Archived routines drop out of active lists.
+    func setArchived(_ routine: RoutineModel, _ archived: Bool) async {
+        guard routine.archived != archived else { return }
+        routine.archived = archived
+        routine.updatedAt = clock.now()
+        if routine.syncState == .synced { routine.syncState = .pendingUpdate }
+        try? context.save()
+        await enqueue(id: routine.id, baseVersion: routine.serverVersion, fields: ["archived": .bool(archived)])
+    }
+
     func delete(_ routine: RoutineModel) async {
         let now = clock.now()
         let op = OutboxOp(opId: idGenerator.newID(), entityType: .routine, entityId: routine.id, op: .delete,

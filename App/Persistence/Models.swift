@@ -290,6 +290,9 @@ final class RoutineModel {
     var streakCurrent: Int
     var streakLongest: Int
     var graceDays: Int
+    /// Suspended (skip materialization/alarms) and archived (hidden from active routine lists).
+    var paused: Bool = false
+    var archived: Bool = false
     /// Encoded `[String]` of completion days ("YYYY-MM-DD") — server-owned.
     var completionsData: Data?
     /// Encoded `[RoutineStep]` JSON.
@@ -313,6 +316,8 @@ final class RoutineModel {
         streakCurrent: Int = 0,
         streakLongest: Int = 0,
         graceDays: Int = 0,
+        paused: Bool = false,
+        archived: Bool = false,
         completionsData: Data? = nil,
         stepsData: Data? = nil,
         createdAt: Date,
@@ -331,6 +336,8 @@ final class RoutineModel {
         self.streakCurrent = streakCurrent
         self.streakLongest = streakLongest
         self.graceDays = graceDays
+        self.paused = paused
+        self.archived = archived
         self.completionsData = completionsData
         self.stepsData = stepsData
         self.createdAt = createdAt
@@ -428,6 +435,8 @@ final class NoteModel {
     @Attribute(.unique) var id: String
     var ownerId: String
     var folderId: String?
+    /// Optional link to a task (Keeper task-note linking).
+    var taskId: String?
     var title: String
     var body: String
     var pinned: Bool
@@ -437,12 +446,14 @@ final class NoteModel {
     var deletedAt: Date?
     var syncStateRaw: Int
 
-    init(id: String, ownerId: String, folderId: String? = nil, title: String, body: String = "",
+    init(id: String, ownerId: String, folderId: String? = nil, taskId: String? = nil,
+         title: String, body: String = "",
          pinned: Bool = false, createdAt: Date, updatedAt: Date,
          serverVersion: Int = 0, syncStateRaw: Int = LocalSyncState.pendingCreate.rawValue) {
         self.id = id
         self.ownerId = ownerId
         self.folderId = folderId
+        self.taskId = taskId
         self.title = title
         self.body = body
         self.pinned = pinned

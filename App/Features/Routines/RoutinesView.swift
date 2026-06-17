@@ -50,6 +50,14 @@ struct RoutinesView: View {
                             Button { Task { await mutation.duplicate(routine) } } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
                                 .tint(.indigo)
                         }
+                        .swipeActions(edge: .leading) {
+                            Button { Task { await mutation.setPaused(routine, !routine.paused) } } label: {
+                                Label(routine.paused ? "Resume" : "Pause", systemImage: routine.paused ? "play.fill" : "pause.fill")
+                            }.tint(.orange)
+                            Button { Task { await mutation.setArchived(routine, !routine.archived) } } label: {
+                                Label(routine.archived ? "Unarchive" : "Archive", systemImage: "archivebox")
+                            }.tint(.gray)
+                        }
                 }
             }
 
@@ -85,11 +93,21 @@ struct RoutinesView: View {
             Image(systemName: "list.bullet.indent").foregroundStyle(Color(hex: routine.colorHex) ?? theme.colors.accent)
             VStack(alignment: .leading, spacing: 2) {
                 Text(routine.name.isEmpty ? "Untitled routine" : routine.name)
-                Text("\(routine.steps.count) steps\(routine.anchorTime.map { " · \($0)" } ?? "")")
+                    .foregroundStyle(routine.archived ? .secondary : .primary)
+                Text("\(routine.steps.count) steps\(routine.anchorTime.map { " · \($0)" } ?? "")\(routineStateSuffix(routine))")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            if routine.paused { Image(systemName: "pause.circle.fill").foregroundStyle(.orange) }
+            if routine.archived { Image(systemName: "archivebox.fill").foregroundStyle(.gray) }
         }
+        .opacity(routine.archived ? 0.6 : 1)
+    }
+
+    private func routineStateSuffix(_ r: RoutineModel) -> String {
+        if r.archived { return " · Archived" }
+        if r.paused { return " · Paused" }
+        return ""
     }
 
     private func habitRow(_ habit: RoutineModel) -> some View {

@@ -328,7 +328,8 @@ extension RoutineModel {
         RoutineDTO(
             id: id, ownerId: ownerId, name: name, colorHex: colorHex, anchorTime: anchorTime,
             recurrence: recurrence, chained: chained, isHabit: isHabit, streakCurrent: streakCurrent,
-            streakLongest: streakLongest, graceDays: graceDays, completions: completions, steps: steps,
+            streakLongest: streakLongest, graceDays: graceDays, paused: paused, archived: archived,
+            completions: completions, steps: steps,
             createdAt: createdAt, updatedAt: updatedAt, serverVersion: serverVersion, deletedAt: deletedAt
         )
     }
@@ -356,6 +357,8 @@ extension RoutineModel {
         streakCurrent = dto.streakCurrent
         streakLongest = dto.streakLongest
         graceDays = dto.graceDays
+        paused = dto.paused
+        archived = dto.archived
         completions = dto.completions
         steps = dto.steps
         createdAt = dto.createdAt
@@ -460,6 +463,7 @@ extension NoteModel {
     func apply(_ dto: NoteDTO) {
         ownerId = dto.ownerId
         folderId = dto.folderId
+        taskId = dto.taskId
         title = dto.title
         body = dto.body
         pinned = dto.pinned

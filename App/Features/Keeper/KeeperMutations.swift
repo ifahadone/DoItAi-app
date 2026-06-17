@@ -128,6 +128,15 @@ struct NoteMutation {
                             fields: ["folderId": folderId.map { AnyCodable.string($0) } ?? .null])
     }
 
+    /// Link/unlink a note to a task (Keeper task-note linking). Pass nil to unlink.
+    func setTaskId(_ note: NoteModel, _ taskId: String?) async {
+        guard taskId != note.taskId else { return }
+        note.taskId = taskId
+        touch(note)
+        await enqueueUpsert(id: note.id, baseVersion: note.serverVersion,
+                            fields: ["taskId": taskId.map { AnyCodable.string($0) } ?? .null])
+    }
+
     func delete(_ note: NoteModel) async {
         let now = clock.now()
         let op = OutboxOp(opId: idGenerator.newID(), entityType: .note, entityId: note.id, op: .delete,

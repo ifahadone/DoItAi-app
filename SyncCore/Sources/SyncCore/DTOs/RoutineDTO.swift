@@ -44,6 +44,9 @@ public struct RoutineDTO: Codable, Sendable, Equatable, Identifiable {
     public var streakCurrent: Int
     public var streakLongest: Int
     public var graceDays: Int
+    /// Suspended (no materialization/alarms) and archived (hidden from active lists). Client-writable.
+    public var paused: Bool
+    public var archived: Bool
     /// Completed days ("YYYY-MM-DD") — server-owned (POST /habits/{id}/log); read-only on the client.
     public var completions: [String]
     public var steps: [RoutineStep]
@@ -65,6 +68,8 @@ public struct RoutineDTO: Codable, Sendable, Equatable, Identifiable {
         streakCurrent: Int = 0,
         streakLongest: Int = 0,
         graceDays: Int = 0,
+        paused: Bool = false,
+        archived: Bool = false,
         completions: [String] = [],
         steps: [RoutineStep] = [],
         createdAt: Date,
@@ -83,6 +88,8 @@ public struct RoutineDTO: Codable, Sendable, Equatable, Identifiable {
         self.streakCurrent = streakCurrent
         self.streakLongest = streakLongest
         self.graceDays = graceDays
+        self.paused = paused
+        self.archived = archived
         self.completions = completions
         self.steps = steps
         self.createdAt = createdAt
@@ -107,6 +114,8 @@ public struct RoutineDTO: Codable, Sendable, Equatable, Identifiable {
         streakCurrent = try c.decodeIfPresent(Int.self, forKey: .streakCurrent) ?? 0
         streakLongest = try c.decodeIfPresent(Int.self, forKey: .streakLongest) ?? 0
         graceDays = try c.decodeIfPresent(Int.self, forKey: .graceDays) ?? 0
+        paused = try c.decodeIfPresent(Bool.self, forKey: .paused) ?? false
+        archived = try c.decodeIfPresent(Bool.self, forKey: .archived) ?? false
         completions = try c.decodeIfPresent([String].self, forKey: .completions) ?? []
         steps = try c.decodeIfPresent([RoutineStep].self, forKey: .steps) ?? []
         createdAt = try c.decode(Date.self, forKey: .createdAt)
