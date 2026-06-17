@@ -50,14 +50,18 @@ struct DoITApp: App {
 /// Switches between the sign-in gate and the main shell based on auth state.
 private struct RootView: View {
     @Environment(AuthService.self) private var auth
+    #if DEBUG
+    /// Drives the `-sectographGallery` debug picker. Presented as a sheet OVER the shell (not as the
+    /// app root) so its Done button can dismiss back to the app — the gallery is never a dead-end.
+    @State private var showGallery = AppConfig.isSectographGallery
+    #endif
 
     var body: some View {
         #if DEBUG
-        if AppConfig.isSectographGallery {
-            NavigationStack { DialStylePicker() }
-        } else {
-            shell
-        }
+        shell
+            .sheet(isPresented: $showGallery) {
+                NavigationStack { DialStylePicker() }
+            }
         #else
         shell
         #endif

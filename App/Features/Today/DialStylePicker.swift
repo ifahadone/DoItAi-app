@@ -7,6 +7,10 @@ import DesignSystem
 /// and the Today hero updates immediately. Reached from Settings → Day dial, and by tapping the dial.
 struct DialStylePicker: View {
     @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.arc.rawValue
+    @Environment(\.dismiss) private var dismiss
+    /// When presented modally (the long-press sheet / Settings push) we show an explicit Done so the
+    /// picker is never a dead-end; the back-chevron of a pushed NavigationStack also works.
+    var showsDoneButton = true
 
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 16)]
 
@@ -51,6 +55,13 @@ struct DialStylePicker: View {
         }
         .navigationTitle("Day-dial style")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if showsDoneButton {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 
