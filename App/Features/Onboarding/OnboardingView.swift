@@ -30,6 +30,15 @@ struct OnboardingView: View {
             footer
         }
         .background(theme.colors.background.ignoresSafeArea())
+        .overlay(alignment: .topTrailing) {
+            // Always-visible escape hatch: skip the whole intro from any page.
+            Button("Skip") { finish(openQuickAdd: false) }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, theme.spacing.lg)
+                .padding(.top, theme.spacing.sm)
+                .accessibilityLabel("Skip onboarding")
+        }
     }
 
     // MARK: Page 0 — the dial hero
@@ -108,8 +117,6 @@ struct OnboardingView: View {
                     Text("Continue").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
                 }
                 .buttonStyle(.borderedProminent)
-                Button("Skip") { finish(openQuickAdd: false) }
-                    .font(.subheadline)
             } else {
                 Button { finish(openQuickAdd: true) } label: {
                     Label("Create your first task", systemImage: "plus")
