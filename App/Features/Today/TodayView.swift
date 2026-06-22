@@ -33,8 +33,8 @@ struct TodayView: View {
     private var allTags: [TagModel]
 
     /// The user's chosen day-dial style (P5-5 sectograph variants), persisted across launches.
-    @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.arc.rawValue
-    private var dialStyle: DialStyle { DialStyle(rawValue: dialStyleRaw) ?? .arc }
+    @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.watchFace.rawValue
+    private var dialStyle: DialStyle { DialStyle(rawValue: dialStyleRaw) ?? .watchFace }
 
     @State private var isCreating = false
     @State private var newTitle = ""
@@ -62,56 +62,25 @@ struct TodayView: View {
                     VStack(spacing: 0) {
                         let dialItems = sectographItems
                         let busy = busyItems
-                        if !dialItems.isEmpty || !busy.isEmpty {
-                            GeometryReader { geo in
-                                // The dial draws as a centered square inside this frame; reconstruct the
-                                // same SectographLayout so a tap maps to a block (or a free time slot).
-                                let side = min(geo.size.width, geo.size.height)
-                                let ox = (geo.size.width - side) / 2
-                                let oy = (geo.size.height - side) / 2
-                                let layout = SectographLayout(size: CGSize(width: side, height: side), ringWidth: 24)
-                                SectographDial(items: dialItems, busy: busy, labels: dialLabels,
-                                                titles: dialTitles, style: dialStyle)
-                                    .contentShape(Rectangle())
-                                    .gesture(SpatialTapGesture().onEnded { v in
-                                        handleDialTap(CGPoint(x: v.location.x - ox, y: v.location.y - oy),
-                                                      layout: layout, items: dialItems)
-                                    })
-                                    // Scrub the dial like a clock dial: drag to scan any time + see what's
-                                    // scheduled there; release on a block opens it, on a free slot quick-adds.
-                                    .simultaneousGesture(
-                                        DragGesture(minimumDistance: 14)
-                                            .onChanged { v in
-                                                scrubMinute = layout.time(at: CGPoint(x: v.location.x - ox, y: v.location.y - oy))
-                                            }
-                                            .onEnded { _ in commitScrub(layout: layout, items: dialItems) })
-                                    .simultaneousGesture(
-                                        LongPressGesture(minimumDuration: 0.45).onEnded { _ in showDialPicker = true })
-                                    .overlay(alignment: .top) {
-                                        if let m = scrubMinute {
-                                            let info = dialReadout(at: m, layout: layout, items: dialItems)
-                                            HStack(spacing: 6) {
-                                                Text(info.time).font(.caption.weight(.semibold)).monospacedDigit()
-                                                if let title = info.title {
-                                                    Circle().fill(info.color).frame(width: 6, height: 6)
-                                                    Text(title).font(.caption).lineLimit(1)
-                                                } else {
-                                                    Text("Free").font(.caption).foregroundStyle(.secondary)
-                                                }
-                                            }
-                                            .padding(.horizontal, 10).padding(.vertical, 6)
-                                            .background(.regularMaterial, in: Capsule())
-                                            .overlay(Capsule().strokeBorder(theme.colors.separator.opacity(0.4)))
-                                            .allowsHitTesting(false)
-                                        }
-                                    }
-                                    .accessibilityAddTraits(.isButton)
-                                    .accessibilityHint("Tap a block to open it, tap a free slot to add a task, drag around the dial to scan the day, long-press to change the dial style")
+                        GeometryReader { geo in
+                            let hasSummary = !dialCategorySummaries.isEmpty
+                            let summaryWidth: CGFloat = hasSummary ? 104 : 0
+                            let spacing: CGFloat = hasSummary ? 10 : 0
+                            let side = min(geo.size.height, max(150, geo.size.width - summaryWidth - spacing))
+                            HStack(alignment: .center, spacing: spacing) {
+                                dialHero(dialItems: dialItems, busy: busy)
+                                    .frame(width: side, height: side)
+                                if hasSummary {
+                                    dialCategorySummary
+                                        .frame(width: summaryWidth)
+                                        .frame(maxHeight: side)
+                                }
                             }
-                            .frame(height: 240)
-                            .padding(.top, theme.spacing.sm)
-                            .padding(.horizontal, theme.spacing.xl)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
+                        .frame(height: 240)
+                        .padding(.top, theme.spacing.sm)
+                        .padding(.bottom, theme.spacing.sm)
                         nextUpCard
                         morningBriefCard
                         taskList
@@ -214,6 +183,110 @@ struct TodayView: View {
             if !listName.localizedCaseInsensitiveContains(hint) { return false }
         }
         return true
+    }
+
+    private func dialHero(dialItems: [SectographItem], busy: [SectographItem]) -> some View {
+        GeometryReader { geo in
+            let side = min(geo.size.width, geo.size.height)
+            let ox = (geo.size.width - side) / 2
+            let oy = (geo.size.height - side) / 2
+            let layout = SectographLayout(size: CGSize(width: side, height: side), ringWidth: 24)
+            SectographDial(items: dialItems, busy: busy, labels: dialLabels,
+                            titles: dialTitles, style: dialStyle)
+                .contentShape(Rectangle())
+                .gesture(SpatialTapGesture().onEnded { v in
+                    handleDialTap(CGPoint(x: v.location.x - ox, y: v.location.y - oy),
+                                  layout: layout, items: dialItems)
+                })
+                // Scrub the dial like a clock dial: drag to scan any time + see what's scheduled there.
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 14)
+                        .onChanged { v in
+                            scrubMinute = layout.time(at: CGPoint(x: v.location.x - ox, y: v.location.y - oy))
+                        }
+                        .onEnded { _ in commitScrub(layout: layout, items: dialItems) })
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.45).onEnded { _ in showDialPicker = true })
+                .overlay(alignment: .top) {
+                    if let m = scrubMinute {
+                        let info = dialReadout(at: m, layout: layout, items: dialItems)
+                        HStack(spacing: 6) {
+                            Text(info.time).font(.caption.weight(.semibold)).monospacedDigit()
+                            if let title = info.title {
+                                Circle().fill(info.color).frame(width: 6, height: 6)
+                                Text(title).font(.caption).lineLimit(1)
+                            } else {
+                                Text("Free").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(.regularMaterial, in: Capsule())
+                        .overlay(Capsule().strokeBorder(theme.colors.separator.opacity(0.4)))
+                        .allowsHitTesting(false)
+                    }
+                }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Tap a block to open it, tap a free slot to add a task, drag around the dial to scan the day, long-press to change the dial style")
+        }
+    }
+
+    private struct DialCategorySummary: Identifiable {
+        let id: String
+        let name: String
+        let colorHex: String?
+        let percent: Int
+    }
+
+    private var dialCategorySummaries: [DialCategorySummary] {
+        let items = sectographItems
+        let total = max(1, items.reduce(0) { $0 + max(1, $1.durationMinutes) })
+        var groups: [String: (name: String, colorHex: String?, minutes: Int)] = [:]
+        for item in items {
+            guard let task = tasks.first(where: { $0.id == item.id }) else { continue }
+            let list = list(for: task)
+            let id = list?.id ?? "other"
+            let current = groups[id] ?? (list?.name ?? "Other", list?.colorHex, 0)
+            groups[id] = (current.name, current.colorHex, current.minutes + max(1, item.durationMinutes))
+        }
+        return groups
+            .map { id, value in
+                DialCategorySummary(id: id, name: value.name, colorHex: value.colorHex,
+                                    percent: Int((Double(value.minutes) / Double(total) * 100).rounded()))
+            }
+            .sorted { $0.percent > $1.percent }
+            .prefix(4)
+            .map { $0 }
+    }
+
+    private var dialCategorySummary: some View {
+        VStack(spacing: 7) {
+            ForEach(dialCategorySummaries) { summary in
+                dialCategoryCard(summary)
+            }
+        }
+    }
+
+    private func dialCategoryCard(_ summary: DialCategorySummary) -> some View {
+        let color = summary.colorHex.flatMap { Color(hex: $0) } ?? Color.gray.opacity(0.7)
+        return VStack(alignment: .leading, spacing: 5) {
+            Text(summary.name)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            HStack(spacing: 5) {
+                Circle().fill(color).frame(width: 7, height: 7)
+                Text("\(summary.percent)%")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(color.opacity(0.18), lineWidth: 1))
     }
 
     /// Today's tasks projected for the "now → next" agenda card (FR-TODAY-110).

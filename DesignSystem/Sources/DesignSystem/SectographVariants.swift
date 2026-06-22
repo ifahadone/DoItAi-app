@@ -12,6 +12,7 @@ public enum DialStyle: String, CaseIterable, Identifiable, Sendable {
     case minimal
     case lanes
     case gauge
+    case watchFace
 
     public var id: String { rawValue }
 
@@ -26,6 +27,7 @@ public enum DialStyle: String, CaseIterable, Identifiable, Sendable {
         case .minimal: return "Minimal"
         case .lanes: return "Lanes"
         case .gauge: return "Gauge"
+        case .watchFace: return "Watch Face"
         }
     }
 
@@ -40,6 +42,7 @@ public enum DialStyle: String, CaseIterable, Identifiable, Sendable {
         case .minimal: return "One calm monochrome ring + big clock"
         case .lanes: return "Concentric timeline lanes (radial Gantt)"
         case .gauge: return "270° gauge, now + time-left"
+        case .watchFace: return "Black clock face with colored day sectors"
         }
     }
 }
@@ -110,6 +113,8 @@ public struct SectographDial: View {
             LanesDial(items: items, titles: titles)
         case .gauge:
             GaugeDial(items: items, titles: titles)
+        case .watchFace:
+            ClassicDial(items: items, titles: titles, blackFace: true)
         }
     }
 }
@@ -436,6 +441,7 @@ struct HaloDial: View {
 struct ClassicDial: View {
     let items: [SectographItem]
     let titles: [String: String]
+    var blackFace = false
 
     var body: some View {
         GeometryReader { geo in
@@ -474,19 +480,26 @@ struct ClassicDial: View {
 
     // 60 minute ticks (major every 5) + hour numerals 1…12.
     private func drawClockFace(_ ctx: GraphicsContext, _ layout: SectographLayout, faceR: CGFloat, r: CGFloat) {
+        let faceRect = CGRect(x: layout.center.x - faceR, y: layout.center.y - faceR,
+                              width: faceR * 2, height: faceR * 2)
+        if blackFace {
+            ctx.fill(Path(ellipseIn: faceRect), with: .color(.black))
+        }
         for i in 0..<60 {
             let major = i % 5 == 0
             let angle = -Double.pi / 2 + Double(i) / 60 * 2 * .pi
             let o = pointAt(layout.center, angle, faceR)
             let inn = pointAt(layout.center, angle, faceR - (major ? 8 : 4))
             ctx.stroke(Path { $0.move(to: inn); $0.addLine(to: o) },
-                       with: .color(.gray.opacity(major ? 0.55 : 0.25)), lineWidth: major ? 1 : 0.5)
+                       with: .color(blackFace ? .white.opacity(major ? 0.95 : 0.65) : .gray.opacity(major ? 0.55 : 0.25)),
+                       lineWidth: blackFace ? (major ? 1.5 : 0.8) : (major ? 1 : 0.5))
         }
         for n in 1...12 {
             let angle = -Double.pi / 2 + Double(n) / 12 * 2 * .pi
             let p = pointAt(layout.center, angle, faceR * 0.91)
-            var t = ctx.resolve(Text("\(n)").font(.system(size: max(9, r * 0.08))))
-            t.shading = .color(.gray.opacity(0.85))
+            var t = ctx.resolve(Text("\(n)").font(.system(size: max(blackFace ? 10 : 9, r * (blackFace ? 0.085 : 0.08)),
+                                                        weight: blackFace ? .bold : .regular)))
+            t.shading = .color(blackFace ? .white : .gray.opacity(0.85))
             ctx.draw(t, at: p, anchor: .center)
         }
     }
@@ -496,10 +509,10 @@ struct ClassicDial: View {
         let base = Color(hex: item.colorHex) ?? .blue
         let future = item.startMinute > nowAbs && !item.isDone
         let wedge = annularWedge(layout, item.startMinute, item.endMinute, inner: inner, outer: outer, padDeg: 1)
-        if future {
+        if !blackFace && future {
             ctx.stroke(wedge, with: .color(base), style: StrokeStyle(lineWidth: 1.6, dash: [4, 3]))
         } else {
-            ctx.fill(wedge, with: .color(base.opacity(item.isDone ? 0.85 : 1)))
+            ctx.fill(wedge, with: .color(base.opacity(item.isDone ? (blackFace ? 0.72 : 0.85) : (blackFace ? 0.95 : 1))))
         }
         guard item.durationMinutes >= 35 else { return }
         let mid = item.startMinute + item.durationMinutes / 2
@@ -510,7 +523,7 @@ struct ClassicDial: View {
         if let title = titles[item.id], !title.isEmpty {
             let p = layout.point(forMinute: mid, radius: (inner + outer) / 2 + 3)
             var t = ctx.resolve(Text(title).font(.system(size: max(8, r * 0.072), weight: .semibold)))
-            t.shading = .color(future ? base : .white)
+            t.shading = .color((!blackFace && future) ? base : .white)
             var c = ctx
             c.translateBy(x: p.x, y: p.y)
             c.rotate(by: .radians(midAngle + (flip ? .pi : 0)))
@@ -520,7 +533,7 @@ struct ClassicDial: View {
         let sa = layout.angle(forMinute: item.startMinute)
         let tp = layout.point(forMinute: item.startMinute, radius: outer - 9)
         var tt = ctx.resolve(Text(classicHM(item.startMinute)).font(.system(size: max(7, r * 0.058), weight: .medium)))
-        tt.shading = .color(future ? base : .white.opacity(0.95))
+        tt.shading = .color((!blackFace && future) ? base : .white.opacity(0.95))
         var tc = ctx
         tc.translateBy(x: tp.x, y: tp.y)
         tc.rotate(by: .radians(sa + .pi / 2 + (cos(sa) < 0 ? .pi : 0)))
@@ -558,7 +571,12 @@ struct ClassicDial: View {
         let time = String(format: "%d:%02d", c.hour ?? 0, c.minute ?? 0)
         let weekday = date.formatted(.dateTime.weekday(.abbreviated)).lowercased()
         return Circle()
-            .fill(Color(hex: "#1FA2E0") ?? .blue)
+            .fill(blackFace ? .black : (Color(hex: "#1FA2E0") ?? .blue))
+            .overlay {
+                if blackFace {
+                    Circle().strokeBorder(.red, lineWidth: max(4, hubR * 0.14))
+                }
+            }
             .frame(width: hubR * 2, height: hubR * 2)
             .overlay(
                 VStack(spacing: -1) {

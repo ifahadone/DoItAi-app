@@ -19,8 +19,8 @@ struct PlanView: View {
                 switch mode {
                 case .planner: CalendarView()
                 case .lists: SmartListsView()
-                }
             }
+        }
             .navigationTitle("Plan")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

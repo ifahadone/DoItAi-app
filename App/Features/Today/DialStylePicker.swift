@@ -6,7 +6,7 @@ import DesignSystem
 /// every ``DialStyle`` with sample data; tapping one selects it (persisted in `@AppStorage("dialStyle")`)
 /// and the Today hero updates immediately. Reached from Settings → Day dial, and by tapping the dial.
 struct DialStylePicker: View {
-    @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.arc.rawValue
+    @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.watchFace.rawValue
     @Environment(\.dismiss) private var dismiss
     /// When presented modally (the long-press sheet / Settings push) we show an explicit Done so the
     /// picker is never a dead-end; the back-chevron of a pushed NavigationStack also works.

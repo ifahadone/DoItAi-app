@@ -35,9 +35,12 @@ struct CalendarView: View {
     @State private var isHorizontalDrag = false
     /// EventKit free/busy authorization, refreshed on appear; drives the "Connect your calendar" card.
     @State private var calendarAuthorized = false
+    @State private var daySlotMinutes = 60
 
     private var cal: Calendar { Calendar.current }
     private var today: Date { cal.startOfDay(for: services.clock.now()) }
+    private var dayHourHeight: CGFloat { 56 * 60 / CGFloat(daySlotMinutes) }
+    private let daySlotOptions = [10, 20, 30, 60, 90, 120]
     private func addMonths(_ n: Int) -> Date { cal.startOfDay(for: cal.date(byAdding: .month, value: n, to: selectedDate) ?? selectedDate) }
 
     var body: some View {
@@ -201,6 +204,9 @@ struct CalendarView: View {
                     items: dayItems(selectedDate),
                     titles: titles(for: selectedDate),
                     busy: busyItems(for: selectedDate),
+                    hourHeight: dayHourHeight,
+                    markerStepMinutes: daySlotMinutes,
+                    splitDayAtNoon: true,
                     onCreate: { minute in Task { await createBlock(at: minute, on: selectedDate) } },
                     onMove: { id, start in Task { await move(id, toStart: start, on: selectedDate) } },
                     onResize: { id, end in Task { await resize(id, toEnd: end, on: selectedDate) } },
@@ -211,6 +217,74 @@ struct CalendarView: View {
             }
             if !unscheduled.isEmpty { tray }
         }
+    }
+
+    private var dayScaleControl: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text("Timeline scale")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(daySlotLabel)
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(Array(daySlotOptions.enumerated()), id: \.element) { index, minutes in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) { daySlotMinutes = minutes }
+                        } label: {
+                            VStack(spacing: 4) {
+                                ZStack {
+                                    Rectangle()
+                                        .fill(index == 0 ? Color.clear : theme.colors.separator.opacity(0.45))
+                                        .frame(height: 1)
+                                        .offset(x: -28)
+                                    Capsule()
+                                        .fill(minutes == daySlotMinutes ? theme.colors.accent : theme.colors.separator)
+                                        .frame(width: 2, height: minutes == daySlotMinutes ? 18 : 10)
+                                }
+                                Text(daySlotTickLabel(minutes))
+                                    .font(.system(size: 10, weight: minutes == daySlotMinutes ? .semibold : .medium))
+                                    .foregroundStyle(minutes == daySlotMinutes ? theme.colors.accent : .secondary)
+                                    .monospacedDigit()
+                            }
+                            .frame(width: 56)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(daySlotAccessibilityLabel(minutes)) timeline scale")
+                        .accessibilityValue(minutes == daySlotMinutes ? "Selected" : "")
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.top, 2)
+        .padding(.bottom, 6)
+    }
+
+    private var daySlotAccessibilityLabel: String {
+        daySlotAccessibilityLabel(daySlotMinutes)
+    }
+
+    private func daySlotAccessibilityLabel(_ minutesValue: Int) -> String {
+        let hours = minutesValue / 60
+        let minutes = minutesValue % 60
+        if hours == 0 { return "\(minutes) minute slot" }
+        if minutes == 0 { return "\(hours) hour slot" }
+        return "\(hours) hour \(minutes) minute slot"
+    }
+
+    private func daySlotTickLabel(_ minutes: Int) -> String {
+        return "\(minutes)m"
+    }
+
+    private var daySlotLabel: String {
+        "\(daySlotMinutes)m"
     }
 
     /// S07: ask for Apple Calendar access at the Plan moment (not up front), so the day grid can show
@@ -469,6 +543,8 @@ struct CalendarView: View {
 
     private var tray: some View {
         VStack(alignment: .leading, spacing: 6) {
+            dayScaleControl
+            Divider().padding(.horizontal, 12)
             Text("Drag to schedule").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 .padding(.horizontal, 12)
             ScrollView(.horizontal, showsIndicators: false) {
