@@ -252,6 +252,25 @@ struct RootTabView: View {
             defaults.removeObject(forKey: "doit.focusControl")
             Task { await handleFocusControl(control) }
         }
+        let pendingComplete = defaults.stringArray(forKey: "doit.pendingComplete") ?? []
+        if !pendingComplete.isEmpty {
+            defaults.removeObject(forKey: "doit.pendingComplete")
+            Task { await completeFromWidget(pendingComplete) }
+        }
+    }
+
+    /// Apply task completions a widget queued while the app was backgrounded (CompleteTaskIntent).
+    @MainActor private func completeFromWidget(_ ids: [String]) async {
+        let mutation = TaskMutation(context: modelContext, engine: services.syncEngine,
+                                    clock: services.clock, idGenerator: services.idGenerator)
+        for id in ids {
+            var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == id })
+            descriptor.fetchLimit = 1
+            if let task = try? modelContext.fetch(descriptor).first, task.status != .done {
+                await mutation.toggleComplete(task)
+            }
+        }
+        if AppConfig.isLiveSync { await services.syncOnce() }
     }
 
     /// Apply a Live-Activity focus command ("toggle:<taskId>" / "stop:<taskId>") to the live session.

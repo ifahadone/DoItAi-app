@@ -35,3 +35,23 @@ struct OpenQuickAddIntent: AppIntent {
         return .result()
     }
 }
+
+/// Interactive "complete" button on the Today widget. Runs in the widget process (no app launch), so
+/// it queues the task id into the shared App Group; the app drains `doit.pendingComplete` on foreground
+/// and completes each through the normal mutation path (widget-driven edit → app's next foreground sync).
+struct CompleteTaskIntent: AppIntent {
+    static var title: LocalizedStringResource = "Complete a DoIT task"
+
+    @Parameter(title: "Task ID") var taskId: String
+
+    init() {}
+    init(taskId: String) { self.taskId = taskId }
+
+    func perform() async throws -> some IntentResult {
+        let defaults = UserDefaults(suiteName: "group.app.doit") ?? .standard
+        var pending = defaults.stringArray(forKey: "doit.pendingComplete") ?? []
+        if !pending.contains(taskId) { pending.append(taskId) }
+        defaults.set(pending, forKey: "doit.pendingComplete")
+        return .result()
+    }
+}

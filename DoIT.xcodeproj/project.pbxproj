@@ -12,6 +12,8 @@
 		2FC0DA872FE9A5B1002DD10C /* DoITWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 2FC0DA712FE9A5AF002DD10C /* DoITWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AA0000000000000000000014 /* SyncCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000012 /* SyncCore */; };
 		AA0000000000000000000015 /* DesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000013 /* DesignSystem */; };
+		2FC0DAA22FE9A5B1002DD10C /* SyncCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2FC0DAA02FE9A5B1002DD10C /* SyncCore */; };
+		2FC0DAA32FE9A5B1002DD10C /* DesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 2FC0DAA12FE9A5B1002DD10C /* DesignSystem */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -67,6 +69,8 @@
 			files = (
 				2FC0DA762FE9A5AF002DD10C /* SwiftUI.framework in Frameworks */,
 				2FC0DA742FE9A5AF002DD10C /* WidgetKit.framework in Frameworks */,
+				2FC0DAA22FE9A5B1002DD10C /* SyncCore in Frameworks */,
+				2FC0DAA32FE9A5B1002DD10C /* DesignSystem in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -130,6 +134,8 @@
 			);
 			name = DoITWidgetExtension;
 			packageProductDependencies = (
+				2FC0DAA02FE9A5B1002DD10C /* SyncCore */,
+				2FC0DAA12FE9A5B1002DD10C /* DesignSystem */,
 			);
 			productName = DoITWidgetExtension;
 			productReference = 2FC0DA712FE9A5AF002DD10C /* DoITWidgetExtension.appex */;
@@ -288,6 +294,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				CODE_SIGN_ENTITLEMENTS = DoITWidget.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DoITWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = DoITWidget;
@@ -354,6 +361,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				CODE_SIGN_ENTITLEMENTS = DoITWidget.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DoITWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = DoITWidget;
@@ -437,9 +445,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = H46QXAC7T7;
+				CODE_SIGN_ENTITLEMENTS = DoIT.entitlements;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -463,9 +473,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = H46QXAC7T7;
+				CODE_SIGN_ENTITLEMENTS = DoIT.entitlements;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -532,6 +544,14 @@
 			productName = SyncCore;
 		};
 		AA0000000000000000000013 /* DesignSystem */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DesignSystem;
+		};
+		2FC0DAA02FE9A5B1002DD10C /* SyncCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SyncCore;
+		};
+		2FC0DAA12FE9A5B1002DD10C /* DesignSystem */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = DesignSystem;
 		};
