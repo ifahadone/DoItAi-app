@@ -35,6 +35,7 @@ struct CalendarView: View {
     @State private var isHorizontalDrag = false
     /// EventKit free/busy authorization, refreshed on appear; drives the "Connect your calendar" card.
     @State private var calendarAuthorized = false
+    @State private var showCalendarSelection = false
     @State private var daySlotMinutes = 60
 
     private var cal: Calendar { Calendar.current }
@@ -55,6 +56,9 @@ struct CalendarView: View {
         }
         .sheet(item: $selectedTask) { task in
             TaskDetailView(task: task).environment(auth).environment(services)
+        }
+        .sheet(isPresented: $showCalendarSelection) {
+            CalendarSelectionView().environment(services)
         }
         .task { calendarAuthorized = services.calendar.isAuthorized }
         .onAppear {
@@ -303,6 +307,22 @@ struct CalendarView: View {
                     Task { calendarAuthorized = await services.calendar.requestAccess() }
                 }
                 .buttonStyle(.borderedProminent).controlSize(.small)
+            }
+            .padding(theme.spacing.md)
+            .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.medium))
+            .padding(.horizontal)
+            .padding(.top, theme.spacing.sm)
+        } else {
+            HStack(spacing: theme.spacing.sm) {
+                Image(systemName: "calendar").foregroundStyle(theme.colors.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Calendars in free/busy").font(.subheadline.weight(.medium))
+                    Text("Choose which calendars show as busy. Read on this device only.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Choose") { showCalendarSelection = true }
+                    .buttonStyle(.bordered).controlSize(.small)
             }
             .padding(theme.spacing.md)
             .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.medium))
