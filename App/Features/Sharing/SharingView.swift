@@ -25,6 +25,8 @@ struct SharingView: View {
     private var apiClient: APIClient { services.apiClient }
     private var myUserId: String { services.currentOwnerId }
     private var isOwner: Bool { share.map { $0.ownerId == myUserId } ?? true }
+    /// This user's role on the shared list, driving role-aware controls (journey G09 role variants).
+    private var myRole: String { members.first { $0.userId == myUserId }?.role ?? (isOwner ? "owner" : "member") }
 
     private static let roles = ["editor", "commenter", "viewer"]
 
@@ -33,6 +35,19 @@ struct SharingView: View {
             Form {
                 if let status {
                     Section { Text(status).font(.footnote).foregroundStyle(.secondary) }
+                }
+
+                if !isOwner && (myRole == "viewer" || myRole == "commenter") {
+                    Section {
+                        RoleRestrictedNotice(
+                            role: myRole.capitalized,
+                            message: myRole == "viewer"
+                                ? "You can view this list. Only editors and the owner can change tasks."
+                                : "You can comment on tasks. Only editors and the owner can change them."
+                        )
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                    }
                 }
 
                 if isOwner {
