@@ -82,6 +82,10 @@ final class AppServices {
         conflictedEntityIds.remove(entityId)
     }
 
+    /// A task id to open in Today, set by a `doit://task/<id>` deep link (journey G15-S16). TodayView
+    /// observes this, presents the detail, and clears it.
+    var pendingOpenTaskId: String?
+
     /// Run one sync cycle: flush local mutations, then pull deltas (AppSpec §8).
     ///
     /// Best-effort and safe to call repeatedly. Surfaces in-flight + failure state via `isSyncing` /

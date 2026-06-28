@@ -6,6 +6,19 @@
 	     is present (App Store validation requires it; the asset compiler only emits the nested one). -->
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
+	<!-- Deep links (journey G15-S16): the doit:// URL scheme so widgets, notifications and shared
+	     links can open an exact tab/task/capture surface. Handled by .onOpenURL in RootTabView. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.doit.DoIT</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>doit</string>
+			</array>
+		</dict>
+	</array>
 	<!-- Export compliance: DoIT uses only standard encryption (HTTPS/ATS + Apple frameworks),
 	     which is exempt, so it declares no use of non-exempt encryption. This skips the per-build
 	     TestFlight/App Store encryption prompt. Revisit if the app ever adds custom cryptography. -->

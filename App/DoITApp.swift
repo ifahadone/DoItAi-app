@@ -225,6 +225,8 @@ struct RootTabView: View {
                 selection = .today // bounce back; the + is an action, not a destination
             }
         }
+        // Deep links (journey G15-S16): doit://today|plan|lists|insights, doit://quickadd, doit://task/<id>.
+        .onOpenURL { handleDeepLink($0) }
         // Widget/Control & Live-Activity actions hand off via the App Group (group.app.doit): a Quick-Add
         // control raises a flag, and Live-Activity pause/stop write a focus command. We pick them up on
         // foreground. (No-op until the App Group entitlement exists — see Widget/README.)
@@ -238,6 +240,25 @@ struct RootTabView: View {
         }
         .sheet(isPresented: $showFocusDemo) {
             FocusTimerView().environment(services)
+        }
+    }
+
+    /// Route a `doit://` deep link to the right surface (journey G15-S16). Unknown links no-op safely.
+    /// Recognized: today · plan · lists · insights (tabs); quickadd/add (capture); task/<id> (open detail).
+    private func handleDeepLink(_ url: URL) {
+        guard url.scheme?.lowercased() == "doit" else { return }
+        let host = (url.host ?? "").lowercased()
+        switch host {
+        case "today": selection = .today
+        case "plan": selection = .plan
+        case "lists": selection = .lists
+        case "insights": selection = .insights
+        case "quickadd", "add", "capture": showQuickAdd = true
+        case "task":
+            // doit://task/<id> — jump to Today and let it present the task detail.
+            let id = url.pathComponents.first { $0 != "/" && !$0.isEmpty }
+            if let id { services.pendingOpenTaskId = id; selection = .today }
+        default: break
         }
     }
 

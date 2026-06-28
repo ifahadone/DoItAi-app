@@ -115,6 +115,9 @@ struct TodayView: View {
                     syncBanner.padding(.horizontal).padding(.top, 4)
                 }
             }
+            // Open a task from a doit://task/<id> deep link once it's available locally (journey G15-S16).
+            .onChange(of: services.pendingOpenTaskId) { _, id in openPendingTask(id) }
+            .onAppear { openPendingTask(services.pendingOpenTaskId) }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
@@ -872,6 +875,13 @@ struct TodayView: View {
     private func completeById(_ id: String) async {
         guard let task = tasks.first(where: { $0.id == id }), task.status != .done else { return }
         await toggleComplete(task)
+    }
+
+    /// Present the task detail for a deep-linked id, then clear the pending flag (journey G15-S16).
+    private func openPendingTask(_ id: String?) {
+        guard let id, let task = tasks.first(where: { $0.id == id }) else { return }
+        selectedTask = task
+        services.pendingOpenTaskId = nil
     }
 
     private func dueText(for task: TaskModel) -> String? {
