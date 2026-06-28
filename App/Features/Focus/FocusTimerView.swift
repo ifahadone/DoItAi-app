@@ -24,6 +24,8 @@ struct FocusTimerView: View {
     private let doneAccent = Color(hex: "#34C759") ?? .green
     /// Set when the user stops — presents the planned-vs-actual completion summary (G06-S05 / S06).
     @State private var summary: FocusSummary?
+    /// Minutes added to the countdown target via "Extend" during a running session (journey G06-S03).
+    @State private var extraMinutes = 0
     /// When the task has no scheduled block to size the ring against, fall back to a 25-min focus block.
     private let defaultTargetMinutes = 25
 
@@ -93,29 +95,49 @@ struct FocusTimerView: View {
     }
 
     @ViewBuilder private func controls(_ session: FocusSession) -> some View {
-        HStack(spacing: 16) {
-            Button {
-                session.isRunning ? services.focus.pause() : services.focus.resume()
+        VStack(spacing: 12) {
+            // Extend the countdown without stopping (journey G06-S03) — useful when a block runs long.
+            Menu {
+                Button("+5 minutes") { extraMinutes += 5 }
+                Button("+10 minutes") { extraMinutes += 10 }
+                Button("+15 minutes") { extraMinutes += 15 }
+                if extraMinutes > 0 {
+                    Button("Reset extension", role: .destructive) { extraMinutes = 0 }
+                }
             } label: {
-                Label(session.isRunning ? "Pause" : "Resume",
-                      systemImage: session.isRunning ? "pause.fill" : "play.fill")
-                    .font(.headline)
+                Label(extraMinutes > 0 ? "Extended +\(extraMinutes)m" : "Extend",
+                      systemImage: "plus.circle")
+                    .font(.subheadline.weight(.medium))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 4)
             }
             .buttonStyle(.bordered)
             .tint(.white)
 
-            Button(role: .destructive) {
-                beginStop(session)
-            } label: {
-                Label("Stop", systemImage: "stop.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
+            HStack(spacing: 16) {
+                Button {
+                    session.isRunning ? services.focus.pause() : services.focus.resume()
+                } label: {
+                    Label(session.isRunning ? "Pause" : "Resume",
+                          systemImage: session.isRunning ? "pause.fill" : "play.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .tint(.white)
+
+                Button(role: .destructive) {
+                    beginStop(session)
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(runningAccent)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(runningAccent)
         }
         .padding(.horizontal, 28)
     }
@@ -123,10 +145,13 @@ struct FocusTimerView: View {
     /// Target minutes for the countdown ring: the focused task's scheduled-block duration if it's on the
     /// dial today, otherwise a sensible 25-minute focus block.
     private func targetMinutes(_ session: FocusSession, items: [SectographItem]) -> Int {
+        let base: Int
         if let item = items.first(where: { $0.id == session.taskId }), !item.isInstant, item.durationMinutes > 0 {
-            return item.durationMinutes
+            base = item.durationMinutes
+        } else {
+            base = defaultTargetMinutes
         }
-        return defaultTargetMinutes
+        return base + extraMinutes
     }
 
     private func dialMinute(_ date: Date) -> Int {
