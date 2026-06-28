@@ -405,6 +405,13 @@ struct TodayView: View {
                         ProgressView().controlSize(.small)
                     } else {
                         Button(briefText.isEmpty ? "Generate" : "Refresh") { streamBrief() }.font(.caption)
+                        if !briefText.isEmpty {
+                            Button {
+                                withAnimation(.snappy) { briefText = "" } // dismiss; regenerate anytime (G02-S03)
+                            } label: { Image(systemName: "xmark").font(.caption2) }
+                            .buttonStyle(.plain).foregroundStyle(.secondary)
+                            .accessibilityLabel("Dismiss brief")
+                        }
                     }
                 }
                 if !briefText.isEmpty {

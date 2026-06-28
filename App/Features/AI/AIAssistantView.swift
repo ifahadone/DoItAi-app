@@ -103,8 +103,19 @@ struct AIAssistantView: View {
                     .disabled(applied)
                 }
                 ForEach(proposal.unscheduled) { item in
-                    Label("\(item.title) — \(item.reason)", systemImage: "exclamationmark.triangle")
-                        .font(.caption).foregroundStyle(.secondary)
+                    // Couldn't-fit reasons are actionable (G05-S14): open the task to shorten it, move its
+                    // deadline, or schedule it manually.
+                    if let task = tasks.first(where: { $0.id == item.taskId }) {
+                        NavigationLink {
+                            TaskDetailView(task: task).environment(services)
+                        } label: {
+                            Label("\(item.title) — \(item.reason)", systemImage: "exclamationmark.triangle")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Label("\(item.title) — \(item.reason)", systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 if !applied {
                     let kept = proposal.blocks.filter { keptBlockIds.contains($0.id) }
