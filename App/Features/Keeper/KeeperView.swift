@@ -18,6 +18,7 @@ struct KeeperView: View {
 
     @State private var creatingFolder = false
     @State private var newFolderName = ""
+    @State private var editingFolder: NoteFolderModel?
 
     var body: some View {
         List {
@@ -41,6 +42,10 @@ struct KeeperView: View {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
+                        .swipeActions(edge: .leading) {
+                            Button { editingFolder = folder } label: { Label("Edit", systemImage: "pencil") }
+                                .tint(.indigo)
+                        }
                 }
             }
         }
@@ -55,6 +60,15 @@ struct KeeperView: View {
             TextField("Name", text: $newFolderName)
             Button("Create") { Task { await createFolder() } }
             Button("Cancel", role: .cancel) {}
+        }
+        .sheet(item: $editingFolder) { folder in
+            FolderEditView(folder: folder) { name, colorHex, icon in
+                Task {
+                    await folderMutation.rename(folder, to: name)
+                    await folderMutation.setAppearance(folder, colorHex: colorHex, icon: icon)
+                    await syncIfLive()
+                }
+            }
         }
     }
 
@@ -166,4 +180,67 @@ struct NoteListView: View {
     private func delete(_ note: NoteModel) async { await noteMutation.delete(note); await syncIfLive() }
     private func togglePin(_ note: NoteModel) async { await noteMutation.setPinned(note, !note.pinned); await syncIfLive() }
     private func syncIfLive() async { if AppConfig.isLiveSync { await services.syncOnce() } }
+}
+
+/// Edit a folder's name, color and icon (journey G10-S04). Wires the existing rename/setAppearance
+/// mutations, which previously had no UI.
+private struct FolderEditView: View {
+    @Environment(\.dismiss) private var dismiss
+    let folder: NoteFolderModel
+    let onSave: (_ name: String, _ colorHex: String, _ icon: String) -> Void
+
+    @State private var name = ""
+    @State private var colorHex = "#8E8E93"
+    @State private var icon = "folder"
+
+    private static let colors = ["#FF3B30", "#FF9500", "#FFCC00", "#34C759", "#00C7BE",
+                                 "#007AFF", "#5856D6", "#AF52DE", "#FF2D55", "#8E8E93"]
+    private static let icons = ["folder", "tray.full", "book", "briefcase", "graduationcap",
+                                "house", "heart", "star", "lightbulb", "leaf", "flame", "bookmark"]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    TextField("Folder name", text: $name)
+                }
+                Section("Color") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
+                        ForEach(Self.colors, id: \.self) { hex in
+                            Circle()
+                                .fill(Color(hex: hex) ?? .gray)
+                                .frame(width: 30, height: 30)
+                                .overlay(Circle().strokeBorder(.primary, lineWidth: colorHex == hex ? 2 : 0))
+                                .onTapGesture { colorHex = hex }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                Section("Icon") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 14) {
+                        ForEach(Self.icons, id: \.self) { sym in
+                            Image(systemName: sym)
+                                .font(.title3)
+                                .frame(width: 36, height: 36)
+                                .foregroundStyle(icon == sym ? Color.white : .primary)
+                                .background(icon == sym ? (Color(hex: colorHex) ?? .accentColor) : Color.secondary.opacity(0.12),
+                                            in: RoundedRectangle(cornerRadius: 8))
+                                .onTapGesture { icon = sym }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .navigationTitle("Edit Folder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { onSave(name.trimmingCharacters(in: .whitespaces), colorHex, icon); dismiss() }
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+            .onAppear { name = folder.name; colorHex = folder.colorHex; icon = folder.icon }
+        }
+    }
 }

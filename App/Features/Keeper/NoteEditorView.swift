@@ -14,10 +14,13 @@ struct NoteEditorView: View {
     @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil && !$0.archived && $0.statusRaw != 4 },
            sort: \TaskModel.createdAt, order: .reverse)
     private var tasks: [TaskModel]
+    @Query(filter: #Predicate<NoteFolderModel> { $0.deletedAt == nil }, sort: \NoteFolderModel.sortIndex)
+    private var folders: [NoteFolderModel]
 
     @State private var titleDraft = ""
     @State private var bodyDraft = ""
     @State private var showTaskPicker = false
+    @State private var showFolderPicker = false
 
     var body: some View {
         Form {
@@ -36,6 +39,16 @@ struct NoteEditorView: View {
                                 .allowsHitTesting(false)
                         }
                     }
+            }
+            Section("Folder") {
+                Button { showFolderPicker = true } label: {
+                    HStack {
+                        Label(currentFolderName, systemImage: "folder")
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+                    .foregroundStyle(.primary)
+                }
             }
             Section("Linked task") {
                 if let linked = tasks.first(where: { $0.id == note.taskId }) {
@@ -91,6 +104,45 @@ struct NoteEditorView: View {
             }
             .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showFolderPicker) {
+            NavigationStack {
+                List {
+                    Button { Task { await move(to: nil) } } label: {
+                        HStack {
+                            Label("All Notes (no folder)", systemImage: "tray")
+                            Spacer()
+                            if note.folderId == nil { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                    ForEach(folders) { folder in
+                        Button { Task { await move(to: folder.id) } } label: {
+                            HStack {
+                                Label(folder.name, systemImage: folder.icon)
+                                Spacer()
+                                if note.folderId == folder.id { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                    }
+                }
+                .navigationTitle("Move note")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showFolderPicker = false } } }
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    /// Display name for the note's current folder (journey G10-S07).
+    private var currentFolderName: String {
+        folders.first { $0.id == note.folderId }?.name ?? "All Notes (no folder)"
+    }
+
+    private func move(to folderId: String?) async {
+        await mutation.move(note, toFolderId: folderId)
+        await syncIfLive()
+        showFolderPicker = false
     }
 
     private func linkTask(_ task: TaskModel) async {
