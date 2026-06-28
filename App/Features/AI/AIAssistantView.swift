@@ -1,12 +1,17 @@
 import SwiftUI
+import SwiftData
 import SyncCore
 
 /// The AI assistant surface (AppSpec §5.10, DevelopmentPlan P4-8): a streamed morning brief, an
-/// auto-plan proposal you accept/edit, and a streamed weekly review. Everything degrades gracefully —
-/// with AI off or unreachable, the actions no-op and the rest of the app keeps working.
+/// auto-plan proposal you accept/edit, and a structured + streamed weekly review. Everything degrades
+/// gracefully — with AI off or unreachable, the actions no-op and the rest of the app keeps working.
 struct AIAssistantView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppServices.self) private var services
+
+    /// Non-deleted tasks, for the deterministic weekly-review metrics (journey G12-S10).
+    @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil && !$0.archived })
+    private var tasks: [TaskModel]
 
     @State private var briefText = ""
     @State private var briefing = false
@@ -143,16 +148,64 @@ struct AIAssistantView: View {
     }
 
     private var reviewSection: some View {
-        Section("Weekly Review") {
+        Section {
+            // Deterministic at-a-glance metrics (journey G12-S10) — always shown, no AI required, so the
+            // numbers are trustworthy; the AI narrative below adds qualitative interpretation.
+            let m = weeklyMetrics
+            HStack(spacing: 0) {
+                reviewMetric("\(m.completed)/\(m.created)", "Completed")
+                Divider().frame(height: 34)
+                reviewMetric(m.completionRatePct.map { "\($0)%" } ?? "—", "Rate")
+                Divider().frame(height: 34)
+                reviewMetric(focusLabel(m.focusMinutes), "Focused")
+                Divider().frame(height: 34)
+                reviewMetric("\(m.overdue)", "Overdue")
+            }
+            .frame(maxWidth: .infinity)
+
             if reviewText.isEmpty && !reviewing {
-                Button { streamReview() } label: { Label("Generate weekly review", systemImage: "chart.line.uptrend.xyaxis") }
+                Button { streamReview() } label: { Label("Generate AI narrative", systemImage: "sparkles") }
             } else {
                 Text(reviewText.isEmpty ? "…" : reviewText)
                     .font(.callout)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if reviewing { ProgressView().controlSize(.small) }
             }
+        } header: {
+            Text("Weekly Review")
+        } footer: {
+            Text("Last 7 days. Metrics are computed on-device; the narrative is AI-generated.")
         }
+    }
+
+    private func reviewMetric(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(.headline).monospacedDigit()
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Deterministic last-7-day metrics from local data, reusing the shared ``Analytics`` engine.
+    private var weeklyMetrics: (created: Int, completed: Int, overdue: Int, completionRatePct: Int?, focusMinutes: Int) {
+        let now = services.clock.now()
+        let start = Calendar.current.date(byAdding: .day, value: -7, to: now) ?? now
+        let interval = DateInterval(start: start, end: now)
+        let stats = tasks.map { t in
+            TaskStat(id: t.id, isDone: t.status == .done, createdAt: t.createdAt, dueAt: t.dueAt,
+                     completedAt: t.completedAt, scheduledStart: t.scheduledStart, scheduledEnd: t.scheduledEnd,
+                     actualMinutes: t.actualMinutes, listId: t.listId)
+        }
+        let c = Analytics.completion(stats, in: interval, now: now)
+        let recent = stats.filter { ($0.completedAt.map { interval.contains($0) }) ?? false }
+        let focus = Analytics.focus(recent)
+        return (c.created, c.completed, c.overdue, c.completionRatePct, focus.totalMinutes)
+    }
+
+    private func focusLabel(_ minutes: Int) -> String {
+        if minutes < 60 { return "\(minutes)m" }
+        let h = minutes / 60, m = minutes % 60
+        return m == 0 ? "\(h)h" : "\(h)h\(m)m"
     }
 
     // MARK: - Streaming
