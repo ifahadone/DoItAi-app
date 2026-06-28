@@ -56,6 +56,8 @@ struct TodayView: View {
     /// The most-recently completed task, surfaced as an undo toast (journey G02-S10).
     @State private var lastCompleted: TaskModel?
     @State private var toastToken = UUID()
+    /// Dismiss flag for the day-health overbooked prompt (journey G02-S07).
+    @State private var dismissedDayHealth = false
 
     var body: some View {
         NavigationStack {
@@ -87,6 +89,7 @@ struct TodayView: View {
                         .padding(.bottom, theme.spacing.sm)
                         nextUpCard
                         morningBriefCard
+                        dayHealthBanner
                         taskList
                     }
                 }
@@ -611,6 +614,51 @@ struct TodayView: View {
     private var mutation: TaskMutation {
         TaskMutation(context: modelContext, engine: services.syncEngine,
                      clock: services.clock, idGenerator: services.idGenerator)
+    }
+
+    /// "Day health" check (journey G02-S07): true when the day is overbooked — too many tasks that still
+    /// need a time block, or overdue work — so Today can offer Auto-plan to fit them in.
+    private var dayHealth: (needsTime: Int, overdue: Int)? {
+        let now = services.clock.now()
+        let cal = Calendar.current
+        let startOfToday = cal.startOfDay(for: now)
+        var needsTime = 0, overdue = 0
+        for t in tasks where t.status != .done {
+            guard let due = t.dueAt else { continue }
+            if due < startOfToday { overdue += 1 }
+            else if cal.isDate(due, inSameDayAs: now), t.scheduledStart == nil { needsTime += 1 }
+        }
+        return (needsTime >= 4 || overdue >= 3) ? (needsTime, overdue) : nil
+    }
+
+    @ViewBuilder private var dayHealthBanner: some View {
+        if !dismissedDayHealth, let h = dayHealth {
+            let warn = Color(hex: "#FF9F0A") ?? .orange
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(warn)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Your day looks full").font(.subheadline.weight(.semibold))
+                    Text(dayHealthMessage(h)).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 6)
+                Button("Auto-plan") { showAssistant = true }
+                    .font(.caption.weight(.semibold)).buttonStyle(.borderedProminent).controlSize(.small)
+                Button { withAnimation(.snappy) { dismissedDayHealth = true } } label: {
+                    Image(systemName: "xmark").font(.caption)
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(warn.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal).padding(.bottom, 4)
+        }
+    }
+
+    private func dayHealthMessage(_ h: (needsTime: Int, overdue: Int)) -> String {
+        var parts: [String] = []
+        if h.needsTime > 0 { parts.append("\(h.needsTime) task\(h.needsTime == 1 ? "" : "s") need time") }
+        if h.overdue > 0 { parts.append("\(h.overdue) overdue") }
+        return parts.joined(separator: " · ") + ". Let Auto-plan fit them in."
     }
 
     /// Non-blocking sync/offline status banner shown at the top of Today (journey G02-S09).
