@@ -109,10 +109,20 @@ struct SettingsView: View {
                             Label("Notifications are off — open iOS Settings", systemImage: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.orange)
                         }
-                    } else {
-                        Button("Enable reminders & alarms") {
+                    } else if notifStatus == .notDetermined {
+                        // First-run value prompt before the one-shot iOS dialog (G13 / G16 permission).
+                        PermissionCard(
+                            icon: "bell.badge",
+                            title: "Turn on reminders & alarms",
+                            message: "Get nudged for due tasks and routine steps. Time-Sensitive alerts can break through Focus.",
+                            actionTitle: "Enable"
+                        ) {
                             Task { await services.requestNotificationAuthorization(); await refreshNotifStatus() }
                         }
+                        .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
+                    } else {
+                        Label("Reminders are on", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
                     }
                     Button {
                         Task { await NotificationScheduler().scheduleTest() }
