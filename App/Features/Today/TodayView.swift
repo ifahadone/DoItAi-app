@@ -53,6 +53,10 @@ struct TodayView: View {
     @State private var briefText = ""
     @State private var briefing = false
 
+    /// The most-recently completed task, surfaced as an undo toast (journey G02-S10).
+    @State private var lastCompleted: TaskModel?
+    @State private var toastToken = UUID()
+
     var body: some View {
         NavigationStack {
             Group {
@@ -88,6 +92,14 @@ struct TodayView: View {
                 }
             }
             .navigationTitle("Today")
+            .overlay(alignment: .bottom) {
+                if let t = lastCompleted {
+                    UndoToast("Completed “\(t.title)”") { Task { await undoComplete() } }
+                        .padding(.bottom, theme.spacing.sm)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy, value: lastCompleted?.id)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
@@ -599,6 +611,24 @@ struct TodayView: View {
     private func toggleComplete(_ task: TaskModel) async {
         await mutation.toggleComplete(task)
         if AppConfig.isLiveSync { await services.syncOnce() }
+        if task.status == .done {
+            let token = UUID(); toastToken = token
+            withAnimation(.snappy) { lastCompleted = task }
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                if toastToken == token { withAnimation(.snappy) { lastCompleted = nil } }
+            }
+        } else if lastCompleted?.id == task.id {
+            withAnimation(.snappy) { lastCompleted = nil }
+        }
+    }
+
+    /// Undo the last completion (re-open the task) and hide the toast (journey G02-S10).
+    private func undoComplete() async {
+        guard let task = lastCompleted else { return }
+        await mutation.toggleComplete(task)
+        if AppConfig.isLiveSync { await services.syncOnce() }
+        withAnimation(.snappy) { lastCompleted = nil }
     }
 
     private func delete(_ task: TaskModel) async {
