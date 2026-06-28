@@ -21,9 +21,15 @@ struct RoutineBuilderView: View {
     @State private var anchorDate = Date()
     @State private var weekdays: Set<Int> = [] // 1=Sun…7=Sat; empty = every day
     @State private var graceDays = 0
+    /// Routine color (journey G07-S03) — syncs via colorHex. Icon is intentionally not exposed: the
+    /// routines table/DTO has no icon column, so it wouldn't round-trip across devices.
+    @State private var colorHex = "#4F46E5"
     /// Smart wake (FR-ALRM-090): a first-commitment time the suggested wake works back from.
     @State private var wakeEnabled = false
     @State private var firstCommitment = Date()
+
+    private static let palette = ["#FF3B30", "#FF9500", "#FFCC00", "#34C759", "#00C7BE",
+                                  "#007AFF", "#5856D6", "#AF52DE", "#FF2D55", "#4F46E5"]
 
     /// Total duration of the routine's steps, in minutes.
     private var totalStepMinutes: Int { steps.reduce(0) { $0 + max(0, $1.minutes) } }
@@ -33,6 +39,20 @@ struct RoutineBuilderView: View {
             Form {
                 Section {
                     TextField(isHabit ? "Habit name" : "Routine name", text: $name)
+                }
+
+                Section("Color") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
+                        ForEach(Self.palette, id: \.self) { hex in
+                            Circle()
+                                .fill(Color(hex: hex) ?? .gray)
+                                .frame(width: 30, height: 30)
+                                .overlay(Circle().strokeBorder(.primary, lineWidth: colorHex == hex ? 2 : 0))
+                                .onTapGesture { colorHex = hex }
+                                .accessibilityLabel(Text(colorHex == hex ? "Selected color" : "Color"))
+                        }
+                    }
+                    .padding(.vertical, 4)
                 }
 
                 if !isHabit {
@@ -181,6 +201,7 @@ struct RoutineBuilderView: View {
         steps = routine.steps.sorted { $0.ord < $1.ord }
         chained = routine.chained
         graceDays = routine.graceDays
+        colorHex = routine.colorHex
         weekdays = Set(routine.recurrence?.weekdays ?? [])
         if let anchor = routine.anchorTime, let minute = RoutineMaterializer.parseAnchorMinute(anchor) {
             anchorEnabled = true
@@ -198,10 +219,10 @@ struct RoutineBuilderView: View {
                                        clock: services.clock, idGenerator: services.idGenerator, ownerId: ownerId)
         if let routine {
             await mutation.update(routine, name: name, anchorTime: anchorTime, recurrence: recurrence,
-                                  chained: chained, graceDays: graceDays, steps: ordered)
+                                  chained: chained, graceDays: graceDays, steps: ordered, colorHex: colorHex)
         } else {
             await mutation.create(name: name, isHabit: isHabit, steps: ordered, anchorTime: anchorTime,
-                                  recurrence: recurrence, chained: chained, graceDays: graceDays)
+                                  recurrence: recurrence, chained: chained, graceDays: graceDays, colorHex: colorHex)
         }
         if AppConfig.isLiveSync { await services.syncOnce() }
         dismiss()

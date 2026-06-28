@@ -47,10 +47,11 @@ struct RoutineMutation {
     func update(
         _ routine: RoutineModel,
         name: String, anchorTime: String?, recurrence: RoutineRecurrence?,
-        chained: Bool, graceDays: Int, steps: [RoutineStep]
+        chained: Bool, graceDays: Int, steps: [RoutineStep], colorHex: String? = nil
     ) async {
         let now = clock.now()
         routine.name = name
+        if let colorHex { routine.colorHex = colorHex }
         routine.anchorTime = anchorTime
         routine.recurrence = recurrence
         routine.chained = chained
