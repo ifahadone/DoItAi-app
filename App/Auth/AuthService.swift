@@ -38,6 +38,12 @@ final class AuthService: NSObject, TokenProviding {
     /// Injected after init to avoid a construction cycle with ``APIClient``.
     private var apiClient: APIClient?
 
+    /// UserDefaults flag marking a local-first session (journey G01-S02/S04, US-ONB-020): the user
+    /// chose to use DoIT device-only, without a cloud account. Restored on launch by ``bootstrap()``.
+    private static let localModeKey = "doit.auth.localMode"
+    /// True when the user is using DoIT in local-first (device-only) mode.
+    var isLocalMode: Bool { UserDefaults.standard.bool(forKey: Self.localModeKey) }
+
     /// The nonce for the in-flight Sign in with Apple request (replay protection, ApiSpec §4.1).
     private var currentNonce: String?
     /// Continuation bridging the delegate callback into async/await.
@@ -70,6 +76,11 @@ final class AuthService: NSObject, TokenProviding {
             return
         }
         #endif
+        // Local-first session (chosen at the account gate): no tokens, device-only, owner = nil.
+        if isLocalMode {
+            state = .signedIn(userId: nil)
+            return
+        }
         do {
             if let _ = try keychain.string(for: KeychainStore.Account.refreshToken) {
                 let userId = try keychain.string(for: KeychainStore.Account.appleUserId)
@@ -80,6 +91,14 @@ final class AuthService: NSObject, TokenProviding {
         } catch {
             state = .signedOut
         }
+    }
+
+    /// Enter local-first (device-only) mode (journey G01-S02/S04). No network, no account; data lives
+    /// on this device and can be upgraded to a cloud account later via Sign in with Apple.
+    func continueLocally() {
+        lastError = nil
+        UserDefaults.standard.set(true, forKey: Self.localModeKey)
+        state = .signedIn(userId: nil)
     }
 
     #if DEBUG
@@ -102,6 +121,7 @@ final class AuthService: NSObject, TokenProviding {
         do {
             let tokens = try await apiClient.signInWithApple(request)
             try persist(tokens, appleUserId: sub)
+            UserDefaults.standard.set(false, forKey: Self.localModeKey)
             state = .signedIn(userId: tokens.userId ?? sub)
         } catch {
             lastError = "dev sign-in failed: \(error)"
@@ -167,6 +187,7 @@ final class AuthService: NSObject, TokenProviding {
 
             let tokens = try await apiClient.signInWithApple(request)
             try persist(tokens, appleUserId: credential.user)
+            UserDefaults.standard.set(false, forKey: Self.localModeKey) // upgraded local → cloud
             state = .signedIn(userId: tokens.userId ?? credential.user)
         } catch {
             lastError = String(describing: error)
@@ -181,6 +202,7 @@ final class AuthService: NSObject, TokenProviding {
         try? keychain.remove(for: KeychainStore.Account.accessToken)
         try? keychain.remove(for: KeychainStore.Account.refreshToken)
         try? keychain.remove(for: KeychainStore.Account.appleUserId)
+        UserDefaults.standard.set(false, forKey: Self.localModeKey)
         state = .signedOut
     }
 

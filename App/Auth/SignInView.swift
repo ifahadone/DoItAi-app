@@ -12,6 +12,9 @@ struct SignInView: View {
     @Environment(\.theme) private var theme
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Presents the local-first explanation before committing to device-only mode (G01-S04).
+    @State private var showLocalExplain = false
+
     var body: some View {
         VStack(spacing: theme.spacing.xl) {
             Spacer()
@@ -50,6 +53,19 @@ struct SignInView: View {
             .accessibilityIdentifier("signInWithAppleButton")
             .disabled(auth.isSigningIn)
 
+            // Local-first account choice (G01-S02): use DoIT device-only, no cloud account.
+            Button {
+                showLocalExplain = true
+            } label: {
+                Text("Continue without an account")
+                    .font(.subheadline.weight(.medium))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .padding(.horizontal, theme.spacing.xl)
+            .accessibilityIdentifier("continueLocallyButton")
+            .disabled(auth.isSigningIn)
+
             if auth.isSigningIn {
                 VStack(spacing: 4) {
                     ProgressView()
@@ -84,5 +100,66 @@ struct SignInView: View {
             Spacer().frame(height: theme.spacing.xxl)
         }
         .padding()
+        .sheet(isPresented: $showLocalExplain) {
+            LocalFirstExplanationView(
+                onContinue: { showLocalExplain = false; auth.continueLocally() },
+                onSignIn: { showLocalExplain = false; Task { await auth.signInWithApple() } }
+            )
+            .presentationDetents([.medium, .large])
+        }
+    }
+}
+
+/// Local-First Mode Explanation (journey G01-S04): what device-only mode means before the user
+/// commits — data stays on this device, no sync across devices, and an account can be added later.
+private struct LocalFirstExplanationView: View {
+    @Environment(\.theme) private var theme
+    let onContinue: () -> Void
+    let onSignIn: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.lg) {
+            VStack(alignment: .leading, spacing: theme.spacing.sm) {
+                Image(systemName: "iphone.gen3")
+                    .font(.system(size: 44)).foregroundStyle(theme.colors.accent)
+                Text("Use DoIT on this device").font(.title2.bold())
+                Text("No account needed. Your tasks, routines and notes live only on this iPhone.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            .padding(.top, theme.spacing.lg)
+
+            VStack(alignment: .leading, spacing: theme.spacing.md) {
+                point("checkmark.shield", "Private by default", "Nothing leaves your device unless you turn on AI or sign in.")
+                point("arrow.triangle.2.circlepath", "No cross-device sync", "Without an account, data won't sync to other devices or back up to the cloud.")
+                point("person.crop.circle.badge.plus", "Upgrade anytime", "Sign in with Apple later to keep your data and sync everywhere.")
+            }
+
+            Spacer(minLength: 0)
+
+            VStack(spacing: theme.spacing.sm) {
+                Button(action: onContinue) {
+                    Text("Continue on this device")
+                        .font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("confirmLocalModeButton")
+                Button(action: onSignIn) {
+                    Text("Sign in with Apple instead")
+                        .font(.subheadline).frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding()
+    }
+
+    private func point(_ icon: String, _ title: String, _ body: String) -> some View {
+        HStack(alignment: .top, spacing: theme.spacing.md) {
+            Image(systemName: icon).foregroundStyle(theme.colors.accent).frame(width: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold))
+                Text(body).font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 }

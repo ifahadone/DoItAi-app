@@ -138,27 +138,43 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    if let exportURL {
-                        ShareLink("Share your data export", item: exportURL)
-                    } else {
+                    if services.auth.isLocalMode {
+                        // Local-first user: offer the upgrade-to-cloud path (G01-S04 promise, US-ONB-020).
                         Button {
-                            Task { preparingExport = true; exportURL = await prepareExport(); preparingExport = false }
+                            Task { await services.auth.signInWithApple() }
                         } label: {
                             HStack {
-                                Label("Export my data", systemImage: "square.and.arrow.up")
+                                Label("Sign in with Apple to sync", systemImage: "applelogo")
                                 Spacer()
-                                if preparingExport { ProgressView() }
+                                if services.auth.isSigningIn { ProgressView() }
                             }
                         }
-                        .disabled(preparingExport)
-                    }
-                    Button(role: .destructive) { showDeleteConfirm = true } label: {
-                        Label("Delete account", systemImage: "trash")
+                        .disabled(services.auth.isSigningIn)
+                    } else {
+                        if let exportURL {
+                            ShareLink("Share your data export", item: exportURL)
+                        } else {
+                            Button {
+                                Task { preparingExport = true; exportURL = await prepareExport(); preparingExport = false }
+                            } label: {
+                                HStack {
+                                    Label("Export my data", systemImage: "square.and.arrow.up")
+                                    Spacer()
+                                    if preparingExport { ProgressView() }
+                                }
+                            }
+                            .disabled(preparingExport)
+                        }
+                        Button(role: .destructive) { showDeleteConfirm = true } label: {
+                            Label("Delete account", systemImage: "trash")
+                        }
                     }
                 } header: {
                     Text("Account")
                 } footer: {
-                    Text("Export downloads all your data as JSON. Deleting your account permanently erases everything on the server and cannot be undone.")
+                    Text(services.auth.isLocalMode
+                         ? "You're using DoIT on this device only. Sign in with Apple to back up and sync across your devices — your local data is kept."
+                         : "Export downloads all your data as JSON. Deleting your account permanently erases everything on the server and cannot be undone.")
                 }
             }
             .sheet(isPresented: $showPaywall) {
