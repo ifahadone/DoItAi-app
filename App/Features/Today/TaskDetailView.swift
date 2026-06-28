@@ -30,6 +30,7 @@ struct TaskDetailView: View {
     @State private var showLocationReminder = false
     @State private var showTimeReminder = false
     @State private var timeDraft = Date().addingTimeInterval(3600)
+    @State private var showRecurrenceEditor = false
 
     private var mutation: TaskMutation {
         TaskMutation(context: modelContext, engine: services.syncEngine,
@@ -110,7 +111,9 @@ struct TaskDetailView: View {
                         Text("Monthly").tag(RecurrenceRule.Freq?.some(.monthly))
                         Text("Yearly").tag(RecurrenceRule.Freq?.some(.yearly))
                     }
-                    if task.recurrence != nil {
+                    if let rule = task.recurrence {
+                        Button("Customize…") { showRecurrenceEditor = true }
+                        Text(recurrenceSummary(rule)).font(.caption).foregroundStyle(.secondary)
                         Button("Edit this event only") {
                             Task { await mutate { await mutation.detachKeepingSeries(task) } }
                         }
@@ -228,6 +231,11 @@ struct TaskDetailView: View {
             }
             .sheet(isPresented: $showingFocus) {
                 FocusTimerView().environment(services)
+            }
+            .sheet(isPresented: $showRecurrenceEditor) {
+                RecurrenceEditorView(initial: task.recurrence ?? RecurrenceRule(freq: .weekly)) { rule in
+                    Task { await mutate { await mutation.setRecurrence(task, rule) } }
+                }
             }
             .sheet(isPresented: $showLocationReminder) {
                 LocationReminderEditor { region in Task { await addLocationReminder(region) } }
@@ -394,5 +402,27 @@ struct TaskDetailView: View {
 
     private func syncIfLive() async {
         if AppConfig.isLiveSync { await services.syncOnce() }
+    }
+
+    /// One-line plain-English description of a recurrence rule for the Repeat section (G04-S11).
+    private func recurrenceSummary(_ rule: RecurrenceRule) -> String {
+        let unit: String
+        switch rule.freq {
+        case .daily: unit = "day"
+        case .weekly: unit = "week"
+        case .monthly: unit = "month"
+        case .yearly: unit = "year"
+        }
+        var s = rule.interval == 1 ? "Every \(unit)" : "Every \(rule.interval) \(unit)s"
+        if rule.freq == .weekly, let days = rule.byWeekday, !days.isEmpty {
+            let names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+            s += " on " + days.sorted().map { names[($0 - 1) % 7] }.joined(separator: ", ")
+        }
+        if let until = rule.until {
+            s += ", until " + until.formatted(date: .abbreviated, time: .omitted)
+        } else if let count = rule.count {
+            s += ", \(count)×"
+        }
+        return s
     }
 }
