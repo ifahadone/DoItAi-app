@@ -71,6 +71,16 @@ final class AppServices {
     private(set) var isSyncing = false
     /// True after the most recent sync cycle failed (offline / server unreachable); cleared on success.
     private(set) var lastSyncFailed = false
+    /// Entity ids whose last push hit a structural/version conflict on the server (journey G04-S15 /
+    /// G16). Resolution is last-writer-wins server-authoritative (the merged row is already pulled),
+    /// but we surface it so an open editor can offer "use latest / keep my edits" recovery rather
+    /// than silently overwriting. Cleared once the user acknowledges via ``acknowledgeConflict(_:)``.
+    private(set) var conflictedEntityIds: Set<String> = []
+
+    /// Dismiss a surfaced conflict once the user has acted on it (kept theirs or re-applied mine).
+    func acknowledgeConflict(_ entityId: String) {
+        conflictedEntityIds.remove(entityId)
+    }
 
     /// Run one sync cycle: flush local mutations, then pull deltas (AppSpec §8).
     ///
@@ -80,8 +90,11 @@ final class AppServices {
         isSyncing = true
         defer { isSyncing = false }
         do {
-            _ = try await syncEngine.flush(using: apiClient)
+            let results = try await syncEngine.flush(using: apiClient)
             _ = try await syncEngine.applyPull(using: apiClient)
+            // Surface structural/version conflicts so an open editor can offer recovery (G04-S15).
+            let conflicts = results.filter { $0.status == .conflict }.map(\.entityId)
+            if !conflicts.isEmpty { conflictedEntityIds.formUnion(conflicts) }
             lastSyncFailed = false
         } catch {
             lastSyncFailed = true

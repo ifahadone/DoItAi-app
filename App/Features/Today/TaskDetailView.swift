@@ -53,6 +53,19 @@ struct TaskDetailView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if services.conflictedEntityIds.contains(task.id) {
+                    Section {
+                        ConflictResolverCard(
+                            mineLabel: titleDraft.isEmpty ? "(empty title)" : titleDraft,
+                            theirsLabel: task.title.isEmpty ? "(empty title)" : task.title,
+                            onKeepMine: { Task { await commitTextAndSchedule(); services.acknowledgeConflict(task.id) } },
+                            onUseTheirs: { resetDraftsFromModel(); services.acknowledgeConflict(task.id) }
+                        )
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                    }
+                }
+
                 Section {
                     TextField("Title", text: $titleDraft, axis: .vertical)
                     Toggle("Completed", isOn: Binding(
@@ -294,15 +307,21 @@ struct TaskDetailView: View {
                 }
             }
             .onAppear {
-                titleDraft = task.title
-                notesDraft = task.notes ?? ""
-                hasDueDate = task.dueAt != nil
-                dueDraft = task.dueAt ?? Date()
+                resetDraftsFromModel()
                 loadReminders()
                 loadChecklist()
             }
             .task { await loadMembersIfShared() }
         }
+    }
+
+    /// Reload the editable drafts from the (server-authoritative) model — used on appear and when the
+    /// user chooses "Use newer" after a conflict (journey G04-S15).
+    private func resetDraftsFromModel() {
+        titleDraft = task.title
+        notesDraft = task.notes ?? ""
+        hasDueDate = task.dueAt != nil
+        dueDraft = task.dueAt ?? Date()
     }
 
     // MARK: - Assignee (journey G04-S08)
