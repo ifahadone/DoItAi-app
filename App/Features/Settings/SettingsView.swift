@@ -129,6 +129,13 @@ struct SettingsView: View {
                     } label: {
                         Label("Send a test notification", systemImage: "bell.badge")
                     }
+                    // Honest explanation of iOS alarm limits (journey G13-S11).
+                    DisclosureGroup {
+                        Text(AlarmScheduler.onboardingNote)
+                            .font(.caption).foregroundStyle(.secondary)
+                    } label: {
+                        Label("Why an alarm might not ring", systemImage: "questionmark.circle")
+                    }
                 } header: {
                     Text("Notifications")
                 } footer: {

@@ -41,6 +41,9 @@ struct AIAssistantView: View {
                         Label("Turn on the AI assistant in Settings to use briefs, auto-plan, and reviews.",
                               systemImage: "sparkles")
                             .foregroundStyle(.secondary)
+                    } footer: {
+                        // Be explicit about what leaves the device (journey G12-S08, US-ONB-040).
+                        Text("With AI on, DoIT sends only task titles, dates/times, list/tag names, and completion status to the model to generate briefs, plans and reviews. Your notes, locations, and calendar event details are never sent. With AI off, capture and planning still work using on-device parsing.")
                     }
                 } else {
                     briefSection
