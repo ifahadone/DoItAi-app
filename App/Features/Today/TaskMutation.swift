@@ -116,6 +116,24 @@ struct TaskMutation {
         await patch(task, fields: ["notes": value.map(AnyCodable.string) ?? .null]) { $0.notes = value }
     }
 
+    /// Set/clear the task's link (journey G04-S04). The server requires a valid URL or null, so an
+    /// empty/invalid string clears it and a scheme-less host is normalized to https:// before saving.
+    func setURL(_ task: TaskModel, _ raw: String?) async {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let value = Self.normalizedURL(trimmed)
+        guard value != task.url else { return }
+        await patch(task, fields: ["url": value.map(AnyCodable.string) ?? .null]) { $0.url = value }
+    }
+
+    /// Returns a valid http(s) URL string (prepending https:// when scheme-less), or nil if unusable.
+    static func normalizedURL(_ s: String) -> String? {
+        guard !s.isEmpty else { return nil }
+        let candidate = s.contains("://") ? s : "https://\(s)"
+        guard let u = URL(string: candidate), let scheme = u.scheme?.lowercased(),
+              scheme == "http" || scheme == "https", (u.host?.isEmpty == false) else { return nil }
+        return candidate
+    }
+
     func setPriority(_ task: TaskModel, _ priority: Priority) async {
         guard priority != task.priority else { return }
         await patch(task, fields: ["priority": .int(priority.rawValue)]) { $0.priority = priority }

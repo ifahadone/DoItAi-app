@@ -20,9 +20,12 @@ struct TaskDetailView: View {
 
     @State private var titleDraft = ""
     @State private var notesDraft = ""
+    @State private var urlDraft = ""
     @State private var hasDueDate = false
     @State private var dueDraft = Date()
     @State private var showingFocus = false
+    @State private var showDeleteConfirm = false
+    @State private var showArchiveConfirm = false
 
     @State private var reminders: [ReminderModel] = []
     @State private var checklistItems: [ChecklistItemModel] = []
@@ -246,6 +249,22 @@ struct TaskDetailView: View {
                     TextField("Notes", text: $notesDraft, axis: .vertical).lineLimit(3...8)
                 }
 
+                Section {
+                    TextField("https://…", text: $urlDraft)
+                        .textContentType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                    if let link = TaskMutation.normalizedURL(urlDraft.trimmingCharacters(in: .whitespacesAndNewlines)),
+                       let u = URL(string: link) {
+                        Link(destination: u) { Label("Open link", systemImage: "safari") }
+                    }
+                } header: {
+                    Text("Link")
+                } footer: {
+                    Text("Attach a related URL. It opens in Safari and syncs with the task.")
+                }
+
                 // Collaboration thread (P5-5). Server-connected builds only — it's a live thread shared
                 // with the list's members, so it has nothing to show in a pure-local build.
                 if AppConfig.isLiveSync {
@@ -262,12 +281,32 @@ struct TaskDetailView: View {
                 }
 
                 Section {
+                    Button {
+                        showArchiveConfirm = true
+                    } label: {
+                        Label("Archive Task", systemImage: "archivebox")
+                    }
                     Button(role: .destructive) {
-                        Task { await mutate { await mutation.delete(task) }; dismiss() }
+                        showDeleteConfirm = true
                     } label: {
                         Label("Delete Task", systemImage: "trash")
                     }
                 }
+            }
+            // Confirm destructive lifecycle actions before they run (journeys G04-S13/S14).
+            .confirmationDialog("Archive this task?", isPresented: $showArchiveConfirm, titleVisibility: .visible) {
+                Button("Archive") { Task { await mutate { await mutation.setArchived(task, true) }; dismiss() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Archiving removes it from your active lists but keeps its history. You can restore it later.")
+            }
+            .confirmationDialog("Delete this task?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) { Task { await mutate { await mutation.delete(task) }; dismiss() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(task.listId != nil
+                     ? "This deletes the task for everyone it's shared with. This can't be undone."
+                     : "This permanently deletes the task. This can't be undone.")
             }
             .sheet(isPresented: $showingFocus) {
                 FocusTimerView().environment(services)
@@ -320,6 +359,7 @@ struct TaskDetailView: View {
     private func resetDraftsFromModel() {
         titleDraft = task.title
         notesDraft = task.notes ?? ""
+        urlDraft = task.url ?? ""
         hasDueDate = task.dueAt != nil
         dueDraft = task.dueAt ?? Date()
     }
@@ -462,6 +502,7 @@ struct TaskDetailView: View {
     private func commitTextAndSchedule() async {
         await mutation.setTitle(task, titleDraft)
         await mutation.setNotes(task, notesDraft)
+        await mutation.setURL(task, urlDraft)
         await mutation.reschedule(task, dueAt: hasDueDate ? dueDraft : nil)
         await syncIfLive()
     }
