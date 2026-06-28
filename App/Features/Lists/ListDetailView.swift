@@ -15,6 +15,12 @@ struct ListDetailView: View {
            sort: \TaskModel.createdAt, order: .reverse)
     private var allTasks: [TaskModel]
 
+    /// Other lists (move target) + tags (bulk tag) for the multi-select bulk bar (journey G08-S13).
+    @Query(filter: #Predicate<TaskListModel> { $0.deletedAt == nil }, sort: \TaskListModel.name)
+    private var allLists: [TaskListModel]
+    @Query(filter: #Predicate<TagModel> { $0.deletedAt == nil }, sort: \TagModel.name)
+    private var allTags: [TagModel]
+
     @State private var selectedTask: TaskModel?
     @State private var isCreating = false
     @State private var newTitle = ""
@@ -25,6 +31,9 @@ struct ListDetailView: View {
     /// paywall. `upgradeAfterGate` defers presenting the paywall until this sheet fully dismisses.
     @State private var showProGate = false
     @State private var upgradeAfterGate = false
+    /// Bulk move/tag sheets (journey G08-S13).
+    @State private var showBulkMove = false
+    @State private var showBulkTag = false
     /// Multi-select for bulk edit in edit mode (FR-TASK-170).
     @State private var selection = Set<String>()
     @Environment(\.editMode) private var editMode
@@ -95,6 +104,12 @@ struct ListDetailView: View {
                         }
                     } label: { Label("Reschedule", systemImage: "calendar.badge.clock") }
                     Spacer()
+                    Button { showBulkMove = true } label: { Label("Move", systemImage: "folder") }
+                        .disabled(allLists.count <= 1)
+                    Spacer()
+                    Button { showBulkTag = true } label: { Label("Tag", systemImage: "tag") }
+                        .disabled(allTags.isEmpty)
+                    Spacer()
                     Button { Task { await bulkArchive() } } label: { Label("Archive", systemImage: "archivebox") }
                     Spacer()
                     Button(role: .destructive) { Task { await bulkDelete() } } label: { Label("Delete", systemImage: "trash") }
@@ -116,6 +131,15 @@ struct ListDetailView: View {
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView().environment(services)
+        }
+        .sheet(isPresented: $showBulkMove) {
+            BulkPickerSheet(title: "Move \(selection.count) task\(selection.count == 1 ? "" : "s")",
+                            rows: allLists.filter { $0.id != list.id }.map { ($0.id, $0.name, $0.icon) }) { listId in
+                Task { await bulkMove(to: listId) }
+            }
+        }
+        .sheet(isPresented: $showBulkTag) {
+            BulkTagSheet(tags: allTags) { tagIds in Task { await bulkAddTags(tagIds) } }
         }
         .sheet(isPresented: $showProGate, onDismiss: {
             if upgradeAfterGate { upgradeAfterGate = false; showPaywall = true }
@@ -167,6 +191,20 @@ struct ListDetailView: View {
         for task in selectedTasks { await mutation.reschedule(task, dueAt: date) }
         selection.removeAll(); await syncIfLive()
     }
+    /// Move every selected task into another list (journey G08-S13).
+    private func bulkMove(to listId: String) async {
+        for task in selectedTasks { await mutation.assign(task, toListId: listId) }
+        selection.removeAll(); await syncIfLive()
+    }
+    /// Add the chosen tags to every selected task, preserving each task's existing tags (G08-S13).
+    private func bulkAddTags(_ tagIds: [String]) async {
+        guard !tagIds.isEmpty else { return }
+        for task in selectedTasks {
+            let merged = Array(Set(task.tagIds).union(tagIds))
+            await mutation.setTags(task, tagIds: merged)
+        }
+        selection.removeAll(); await syncIfLive()
+    }
 
     /// Drag-to-reorder: reassign each task's `rank` to its new index (FR-TASK-150).
     private func move(from source: IndexSet, to destination: Int) {
@@ -188,4 +226,62 @@ struct ListDetailView: View {
     }
 
     private func syncIfLive() async { if AppConfig.isLiveSync { await services.syncOnce() } }
+}
+
+/// A simple single-choice picker sheet used for bulk "Move to list" (journey G08-S13).
+private struct BulkPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    let rows: [(id: String, name: String, icon: String)]
+    let onPick: (String) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List(rows, id: \.id) { row in
+                Button {
+                    onPick(row.id); dismiss()
+                } label: {
+                    Label(row.name, systemImage: row.icon.isEmpty ? "list.bullet" : row.icon)
+                        .foregroundStyle(.primary)
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+/// A multi-select tag sheet used for bulk "Add tags" (journey G08-S13).
+private struct BulkTagSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let tags: [TagModel]
+    let onApply: ([String]) -> Void
+    @State private var picked = Set<String>()
+
+    var body: some View {
+        NavigationStack {
+            List(tags) { tag in
+                Button {
+                    if picked.contains(tag.id) { picked.remove(tag.id) } else { picked.insert(tag.id) }
+                } label: {
+                    HStack {
+                        Text(tag.name).foregroundStyle(.primary)
+                        Spacer()
+                        if picked.contains(tag.id) { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                    }
+                }
+            }
+            .navigationTitle("Add tags")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Apply") { onApply(Array(picked)); dismiss() }.disabled(picked.isEmpty)
+                }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
 }
