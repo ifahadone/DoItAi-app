@@ -17,6 +17,9 @@ struct AIAssistantView: View {
     @State private var proposal: AIScheduleProposal?
     @State private var planning = false
     @State private var applied = false
+    /// Blocks the user has kept in the proposal review (journey G05-S13) — nothing is written until
+    /// "Apply" and only these survive. Defaults to every proposed block; the user can drop any.
+    @State private var keptBlockIds: Set<String> = []
     // Auto-plan preferences / constraints (journey G05-S11): working hours + inter-block buffer.
     @State private var bufferMinutes = 10
     @State private var workStart = 9
@@ -65,16 +68,9 @@ struct AIAssistantView: View {
                 Stepper("Day ends \(hourLabel(workEnd))", value: $workEnd, in: 1...24)
                 Stepper("Buffer between blocks: \(bufferMinutes)m", value: $bufferMinutes, in: 0...60, step: 5)
             }
-            Button {
-                Task {
-                    planning = true; applied = false
-                    proposal = await services.aiAutoPlan(intent: trimmed(intent), bufferMinutes: bufferMinutes,
-                                                          workStartHour: workStart, workEndHour: workEnd)
-                    planning = false
-                }
-            } label: {
+            Button { propose() } label: {
                 HStack {
-                    Label("Propose a plan", systemImage: "wand.and.stars")
+                    Label(proposal == nil ? "Propose a plan" : "Regenerate", systemImage: "wand.and.stars")
                     Spacer()
                     if planning { ProgressView().controlSize(.small) }
                 }
@@ -82,23 +78,40 @@ struct AIAssistantView: View {
             .disabled(planning)
 
             if let proposal {
+                // Review before any write (US-PLAN-030): each placement can be kept or dropped; only
+                // kept blocks are committed on Apply. Tap a row to toggle it.
                 ForEach(proposal.blocks) { block in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(block.title)
-                        Text("\(timeRange(block)) · \(block.reason)")
-                            .font(.caption).foregroundStyle(.secondary)
+                    Button { toggleBlock(block.id) } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: keptBlockIds.contains(block.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(keptBlockIds.contains(block.id) ? Color.accentColor : .secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(block.title).foregroundStyle(.primary)
+                                    .strikethrough(!keptBlockIds.contains(block.id))
+                                Text("\(timeRange(block)) · \(block.reason)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .disabled(applied)
                 }
                 ForEach(proposal.unscheduled) { item in
                     Label("\(item.title) — \(item.reason)", systemImage: "exclamationmark.triangle")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if !proposal.blocks.isEmpty && !applied {
-                    let blocks = proposal.blocks
+                if !applied {
+                    let kept = proposal.blocks.filter { keptBlockIds.contains($0.id) }
                     Button {
-                        Task { await services.applyPlan(blocks); applied = true }
+                        Task { await services.applyPlan(kept); applied = true }
                     } label: {
-                        Label("Apply plan", systemImage: "checkmark.circle")
+                        Label(kept.isEmpty ? "Select at least one block" : "Apply \(kept.count) block\(kept.count == 1 ? "" : "s")",
+                              systemImage: "checkmark.circle")
+                    }
+                    .disabled(kept.isEmpty)
+                    Button(role: .destructive) { discardProposal() } label: {
+                        Label("Discard proposal", systemImage: "xmark.circle")
                     }
                 }
                 if applied { Label("Plan applied to your day", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
@@ -106,8 +119,27 @@ struct AIAssistantView: View {
         } header: {
             Text("Auto-plan")
         } footer: {
-            Text("AI ranks your open tasks by your intent; a deterministic solver places them into free slots.")
+            Text("AI ranks your open tasks by your intent; a deterministic solver places them into free slots. Nothing changes until you Apply.")
         }
+    }
+
+    private func propose() {
+        Task {
+            planning = true; applied = false
+            let result = await services.aiAutoPlan(intent: trimmed(intent), bufferMinutes: bufferMinutes,
+                                                   workStartHour: workStart, workEndHour: workEnd)
+            proposal = result
+            keptBlockIds = Set(result?.blocks.map(\.id) ?? [])
+            planning = false
+        }
+    }
+
+    private func toggleBlock(_ id: String) {
+        if keptBlockIds.contains(id) { keptBlockIds.remove(id) } else { keptBlockIds.insert(id) }
+    }
+
+    private func discardProposal() {
+        proposal = nil; keptBlockIds = []; applied = false
     }
 
     private var reviewSection: some View {
