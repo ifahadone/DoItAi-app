@@ -342,7 +342,7 @@ final class AppServices {
 
     /// Auto-plan: gather unscheduled open tasks + today's free slots, ask the server to rank (by the
     /// optional intent) + place. Returns nil if there's nothing to plan or AI is off.
-    func aiAutoPlan(intent: String?) async -> AIScheduleProposal? {
+    func aiAutoPlan(intent: String?, bufferMinutes: Int = 10, workStartHour: Int = 9, workEndHour: Int = 18) async -> AIScheduleProposal? {
         guard aiConsentEnabled else { return nil }
         let ctx = container.mainContext
         let now = clock.now()
@@ -353,8 +353,9 @@ final class AppServices {
             AIScheduleTask(id: task.id, title: task.title, durationMinutes: 30,
                            priority: AIPriority(task.priority), dueIso: task.dueAt.map { TaskMutation.iso($0) })
         }
-        let request = AIScheduleRequest(tasks: Array(tasks), freeSlots: todayFreeSlots(now: now),
-                                        bufferMinutes: 10, intent: intent)
+        let slots = todayFreeSlots(now: now, startHour: workStartHour, endHour: workEndHour)
+        let request = AIScheduleRequest(tasks: Array(tasks), freeSlots: slots,
+                                        bufferMinutes: max(0, bufferMinutes), intent: intent)
         return try? await apiClient.aiSchedule(request)
     }
 
@@ -411,11 +412,13 @@ final class AppServices {
 
     /// Today's free slots = the working-hours window (09:00–18:00 local) minus any already-scheduled
     /// blocks, starting no earlier than now. A pragmatic default until working hours are user-set.
-    private func todayFreeSlots(now: Date) -> [AITimeSlot] {
+    private func todayFreeSlots(now: Date, startHour: Int = 9, endHour: Int = 18) -> [AITimeSlot] {
         let cal = Calendar.current
         let startOfDay = cal.startOfDay(for: now)
-        guard let workStart = cal.date(byAdding: .hour, value: 9, to: startOfDay),
-              let workEnd = cal.date(byAdding: .hour, value: 18, to: startOfDay) else { return [] }
+        let s = max(0, min(23, startHour))
+        let e = max(s + 1, min(24, endHour))
+        guard let workStart = cal.date(byAdding: .hour, value: s, to: startOfDay),
+              let workEnd = cal.date(byAdding: .hour, value: e, to: startOfDay) else { return [] }
         let windowStart = max(now, workStart)
         guard windowStart < workEnd else { return [] }
 

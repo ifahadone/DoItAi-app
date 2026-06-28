@@ -17,6 +17,11 @@ struct AIAssistantView: View {
     @State private var proposal: AIScheduleProposal?
     @State private var planning = false
     @State private var applied = false
+    // Auto-plan preferences / constraints (journey G05-S11): working hours + inter-block buffer.
+    @State private var bufferMinutes = 10
+    @State private var workStart = 9
+    @State private var workEnd = 18
+    @State private var showPrefs = false
 
     var body: some View {
         NavigationStack {
@@ -55,8 +60,18 @@ struct AIAssistantView: View {
     private var autoPlanSection: some View {
         Section {
             TextField("Intent — e.g. mornings for deep work", text: $intent)
+            DisclosureGroup("Preferences & constraints", isExpanded: $showPrefs) {
+                Stepper("Day starts \(hourLabel(workStart))", value: $workStart, in: 0...22)
+                Stepper("Day ends \(hourLabel(workEnd))", value: $workEnd, in: 1...24)
+                Stepper("Buffer between blocks: \(bufferMinutes)m", value: $bufferMinutes, in: 0...60, step: 5)
+            }
             Button {
-                Task { planning = true; applied = false; proposal = await services.aiAutoPlan(intent: trimmed(intent)); planning = false }
+                Task {
+                    planning = true; applied = false
+                    proposal = await services.aiAutoPlan(intent: trimmed(intent), bufferMinutes: bufferMinutes,
+                                                          workStartHour: workStart, workEndHour: workEnd)
+                    planning = false
+                }
             } label: {
                 HStack {
                     Label("Propose a plan", systemImage: "wand.and.stars")
@@ -138,6 +153,13 @@ struct AIAssistantView: View {
             }
             reviewing = false
         }
+    }
+
+    private func hourLabel(_ h: Int) -> String {
+        var comps = DateComponents(); comps.hour = h % 24
+        let date = Calendar.current.date(from: comps) ?? Date()
+        let formatter = DateFormatter(); formatter.dateFormat = "ha"
+        return formatter.string(from: date).lowercased()
     }
 
     private func trimmed(_ s: String) -> String? {
