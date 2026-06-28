@@ -417,38 +417,84 @@ struct TodayView: View {
         }
     }
 
+    /// Overdue (past-due, still open) tasks within the current search scope — surfaced in their own
+    /// strip so they don't silently rot at the bottom of the list (journey G02-S04).
+    private var overdueTasks: [TaskModel] {
+        let startOfToday = Calendar.current.startOfDay(for: services.clock.now())
+        return visibleTasks.filter { $0.status != .done && ($0.dueAt.map { $0 < startOfToday } ?? false) }
+    }
+
+    /// Everything not in the overdue strip (so each task appears exactly once).
+    private var mainTasks: [TaskModel] {
+        let overdueIds = Set(overdueTasks.map(\.id))
+        return visibleTasks.filter { !overdueIds.contains($0.id) }
+    }
+
     private var taskList: some View {
         List {
-            ForEach(visibleTasks) { task in
-                TaskRow(
-                    title: task.title,
-                    isDone: task.status == .done,
-                    priorityLevel: task.priority.rawValue,
-                    list: list(for: task).map {
-                        TaskRow.ListBadge(name: $0.name, systemImage: $0.icon, colorHex: $0.colorHex)
-                    },
-                    tags: tagNames(for: task),
-                    dueText: dueText(for: task),
-                    isPendingSync: task.syncState != .synced,
-                    onToggle: { Task { await toggleComplete(task) } }
-                )
-                .contentShape(Rectangle())
-                .onTapGesture { selectedTask = task }
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button(role: .destructive) { Task { await delete(task) } } label: {
-                        Label("Delete", systemImage: "trash")
+            if !overdueTasks.isEmpty {
+                Section {
+                    ForEach(overdueTasks) { task in taskRow(task) }
+                } header: {
+                    HStack {
+                        Label("Overdue · \(overdueTasks.count)", systemImage: "exclamationmark.circle.fill")
+                            .foregroundStyle(.red)
+                        Spacer()
+                        Button("Move to today") { Task { await rescheduleOverdueToToday() } }
+                            .font(.caption.weight(.semibold))
                     }
                 }
-                .swipeActions(edge: .leading) {
-                    Button { Task { await toggleComplete(task) } } label: {
-                        Label(task.status == .done ? "Reopen" : "Done",
-                              systemImage: task.status == .done ? "arrow.uturn.left" : "checkmark.circle")
-                    }
-                    .tint(task.status == .done ? .gray : .green)
-                }
-                .contextMenu { rowContextMenu(task) } // long-press quick actions (FR-TASK-190)
+            }
+            Section {
+                ForEach(mainTasks) { task in taskRow(task) }
             }
         }
+    }
+
+    /// One task row with its tap / swipe / context-menu affordances (shared by the overdue + main
+    /// sections so behaviour stays identical).
+    @ViewBuilder private func taskRow(_ task: TaskModel) -> some View {
+        TaskRow(
+            title: task.title,
+            isDone: task.status == .done,
+            priorityLevel: task.priority.rawValue,
+            list: list(for: task).map {
+                TaskRow.ListBadge(name: $0.name, systemImage: $0.icon, colorHex: $0.colorHex)
+            },
+            tags: tagNames(for: task),
+            dueText: dueText(for: task),
+            isPendingSync: task.syncState != .synced,
+            onToggle: { Task { await toggleComplete(task) } }
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { selectedTask = task }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) { Task { await delete(task) } } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .swipeActions(edge: .leading) {
+            Button { Task { await toggleComplete(task) } } label: {
+                Label(task.status == .done ? "Reopen" : "Done",
+                      systemImage: task.status == .done ? "arrow.uturn.left" : "checkmark.circle")
+            }
+            .tint(task.status == .done ? .gray : .green)
+        }
+        .contextMenu { rowContextMenu(task) } // long-press quick actions (FR-TASK-190)
+    }
+
+    /// Bulk-move every overdue task's due date to today (keeping its time-of-day), without touching
+    /// scheduled blocks — overdue work shouldn't silently change, but the user can opt in (G02-S04).
+    private func rescheduleOverdueToToday() async {
+        let cal = Calendar.current
+        let now = services.clock.now()
+        for task in overdueTasks {
+            guard let due = task.dueAt else { continue }
+            let t = cal.dateComponents([.hour, .minute], from: due)
+            let newDue = cal.date(bySettingHour: t.hour ?? 9, minute: t.minute ?? 0, second: 0, of: now) ?? now
+            await mutation.reschedule(task, dueAt: newDue)
+        }
+        if AppConfig.isLiveSync { await services.syncOnce() }
     }
 
     /// Long-press context menu for a task row: complete, reschedule presets, open, delete (FR-TASK-190).
