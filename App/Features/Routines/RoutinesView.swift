@@ -115,8 +115,8 @@ struct RoutinesView: View {
             Image(systemName: "flame.fill").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 2) {
                 Text(habit.name.isEmpty ? "Untitled habit" : habit.name)
-                Text("🔥 \(habit.streakCurrent) · best \(habit.streakLongest)")
-                    .font(.caption).foregroundStyle(.secondary)
+                Label("\(habit.streakCurrent) · best \(habit.streakLongest)", systemImage: "flame.fill")
+                    .font(.caption).foregroundStyle(.secondary).labelStyle(.titleAndIcon)
             }
             Spacer()
             Button("Done") { Task { await logHabit(habit) } }

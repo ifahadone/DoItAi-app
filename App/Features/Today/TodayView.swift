@@ -32,6 +32,10 @@ struct TodayView: View {
     @Query(filter: #Predicate<TagModel> { $0.deletedAt == nil })
     private var allTags: [TagModel]
 
+    /// Active habits, for the Today habit-ring card (journey G02-S06). Excludes paused/archived ones.
+    @Query(filter: #Predicate<RoutineModel> { $0.deletedAt == nil && $0.isHabit == true && !$0.archived && !$0.paused })
+    private var habits: [RoutineModel]
+
     /// The user's chosen day-dial style (P5-5 sectograph variants), persisted across launches.
     @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.watchFace.rawValue
     private var dialStyle: DialStyle { DialStyle(rawValue: dialStyleRaw) ?? .watchFace }
@@ -89,6 +93,7 @@ struct TodayView: View {
                         .padding(.bottom, theme.spacing.sm)
                         nextUpCard
                         morningBriefCard
+                        habitProgressCard
                         dayHealthBanner
                         taskList
                     }
@@ -614,6 +619,94 @@ struct TodayView: View {
     private var mutation: TaskMutation {
         TaskMutation(context: modelContext, engine: services.syncEngine,
                      clock: services.clock, idGenerator: services.idGenerator)
+    }
+
+    // MARK: - Habit progress (journey G02-S06)
+
+    /// Habits scheduled for today (recurrence weekday match, or "every day" when no weekdays set),
+    /// paired with whether each is already logged today. Sorted undone-first so the next nudge is on top.
+    private var todayHabits: [(habit: RoutineModel, done: Bool)] {
+        let now = services.clock.now()
+        let cal = Calendar.current
+        let key = Self.dayKey(now)
+        return habits
+            .filter { RoutineMaterializer.occurs(recurrence: $0.recurrence, on: now, calendar: cal) }
+            .map { ($0, $0.completions.contains(key)) }
+            .sorted { lhs, rhs in
+                if lhs.done != rhs.done { return !lhs.done } // undone first
+                return lhs.habit.name.localizedCaseInsensitiveCompare(rhs.habit.name) == .orderedAscending
+            }
+    }
+
+    /// Today's habit ring + a one-tap "Done" for the next outstanding habit (journey G02-S06). Hidden
+    /// when no habits are scheduled today. Once everything is logged, it shows an all-clear state.
+    @ViewBuilder private var habitProgressCard: some View {
+        let items = todayHabits
+        if !items.isEmpty {
+            let done = items.filter { $0.done }.count
+            let total = items.count
+            let next = items.first { !$0.done }?.habit
+            HStack(spacing: 12) {
+                habitRing(done: done, total: total)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Habits").font(.subheadline.weight(.semibold))
+                    if let next {
+                        Text("Up next: \(next.name.isEmpty ? "Untitled habit" : next.name)")
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    } else {
+                        Text("All habits done today").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 6)
+                if let next {
+                    Button {
+                        Task { await logHabit(next) }
+                    } label: {
+                        Label("Done", systemImage: "checkmark").labelStyle(.titleAndIcon)
+                    }
+                    .font(.caption.weight(.semibold)).buttonStyle(.borderedProminent).controlSize(.small)
+                } else {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(.green).font(.title3)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.colors.separator.opacity(0.4)))
+            .padding(.horizontal, theme.spacing.xl)
+            .padding(.bottom, theme.spacing.sm)
+        }
+    }
+
+    private func habitRing(done: Int, total: Int) -> some View {
+        let fraction = total == 0 ? 0 : Double(done) / Double(total)
+        return ZStack {
+            Circle().stroke(theme.colors.separator.opacity(0.3), lineWidth: 5)
+            Circle()
+                .trim(from: 0, to: fraction)
+                .stroke(theme.colors.accent, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(done)/\(total)").font(.caption2.weight(.bold)).monospacedDigit()
+        }
+        .frame(width: 40, height: 40)
+        .animation(.snappy, value: fraction)
+    }
+
+    /// A `RoutineMutation` (mirrors `RoutinesView`) for logging a habit completion from Today.
+    private func mutation(for habit: RoutineModel) -> RoutineMutation {
+        let ownerId: String
+        if case let .signedIn(userId) = auth.state, let userId { ownerId = userId } else { ownerId = "local-user" }
+        return RoutineMutation(context: modelContext, engine: services.syncEngine, apiClient: services.apiClient,
+                               clock: services.clock, idGenerator: services.idGenerator, ownerId: ownerId)
+    }
+
+    private func logHabit(_ habit: RoutineModel) async {
+        _ = await mutation(for: habit).logHabitToday(habit)
+        if AppConfig.isLiveSync { await services.syncOnce() }
+    }
+
+    /// "yyyy-MM-dd" day key (matches `RoutineMutation.logHabitToday` + the heatmap's completion keys).
+    private static func dayKey(_ date: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: date)
     }
 
     /// "Day health" check (journey G02-S07): true when the day is overbooked — too many tasks that still
