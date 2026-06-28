@@ -1,5 +1,6 @@
 import SwiftUI
 import SyncCore
+import DesignSystem
 
 /// Comments + @mentions on a task (DevelopmentPlan P5-5, AppSpec §16.4). The thread lives on the
 /// server (shared with the list's members); this fetches it live and posts new comments through
@@ -16,12 +17,24 @@ struct TaskCommentsSection: View {
     @State private var comments: [CommentDTO] = []
     @State private var draft = ""
     @State private var sending = false
+    @State private var loadState: LoadState = .loading
+
+    private enum LoadState { case loading, loaded, failed }
 
     private var apiClient: APIClient { services.apiClient }
     private var myUserId: String { services.currentOwnerId }
 
     var body: some View {
         Section("Comments") {
+            if loadState == .loading && comments.isEmpty {
+                LoadingSkeleton(rows: 3)
+                    .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
+            } else if loadState == .failed && comments.isEmpty {
+                RecoverableErrorView(title: "Couldn't load comments",
+                                     message: "Check your connection and try again.",
+                                     retryTitle: "Retry") { Task { await load() } }
+                    .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
+            } else {
             if comments.isEmpty {
                 Text("No comments yet.").font(.subheadline).foregroundStyle(.secondary)
             }
@@ -50,12 +63,19 @@ struct TaskCommentsSection: View {
                     .disabled(sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityLabel("Post comment")
             }
+            }
         }
         .task { await load() }
     }
 
     private func load() async {
-        comments = (try? await apiClient.taskComments(taskId: taskId)) ?? []
+        if comments.isEmpty { loadState = .loading }
+        do {
+            comments = try await apiClient.taskComments(taskId: taskId)
+            loadState = .loaded
+        } catch {
+            loadState = .failed
+        }
     }
 
     private func send() async {

@@ -21,6 +21,10 @@ struct ListDetailView: View {
     @State private var query = ""
     @State private var showSharing = false
     @State private var showPaywall = false
+    /// Contextual Pro gate for sharing (journey G03-S11 / G16): explains the feature before the full
+    /// paywall. `upgradeAfterGate` defers presenting the paywall until this sheet fully dismisses.
+    @State private var showProGate = false
+    @State private var upgradeAfterGate = false
     /// Multi-select for bulk edit in edit mode (FR-TASK-170).
     @State private var selection = Set<String>()
     @Environment(\.editMode) private var editMode
@@ -73,8 +77,8 @@ struct ListDetailView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    // Sharing is a Pro feature (AppSpec §17); non-Pro taps land on the paywall.
-                    if services.entitlements.isPro { showSharing = true } else { showPaywall = true }
+                    // Sharing is a Pro feature (AppSpec §17); non-Pro taps see a contextual gate first.
+                    if services.entitlements.isPro { showSharing = true } else { showProGate = true }
                 } label: { Image(systemName: "person.crop.circle.badge.plus") }
                     .accessibilityLabel("Share list")
             }
@@ -112,6 +116,21 @@ struct ListDetailView: View {
         }
         .sheet(isPresented: $showPaywall) {
             PaywallView().environment(services)
+        }
+        .sheet(isPresented: $showProGate, onDismiss: {
+            if upgradeAfterGate { upgradeAfterGate = false; showPaywall = true }
+        }) {
+            VStack {
+                ProGateCard(
+                    feature: "Sharing & collaboration",
+                    message: "Share “\(list.name)”, assign tasks, and comment with your team. Available on DoIT Pro.",
+                    onUpgrade: { upgradeAfterGate = true; showProGate = false },
+                    fallbackTitle: "Not now", onFallback: { showProGate = false }
+                )
+                Spacer()
+            }
+            .padding()
+            .presentationDetents([.medium])
         }
     }
 
