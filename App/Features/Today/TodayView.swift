@@ -100,6 +100,11 @@ struct TodayView: View {
                 }
             }
             .animation(.snappy, value: lastCompleted?.id)
+            .safeAreaInset(edge: .top) {
+                if services.isSyncing || services.lastSyncFailed {
+                    syncBanner.padding(.horizontal).padding(.top, 4)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
@@ -606,6 +611,17 @@ struct TodayView: View {
     private var mutation: TaskMutation {
         TaskMutation(context: modelContext, engine: services.syncEngine,
                      clock: services.clock, idGenerator: services.idGenerator)
+    }
+
+    /// Non-blocking sync/offline status banner shown at the top of Today (journey G02-S09).
+    @ViewBuilder private var syncBanner: some View {
+        if services.isSyncing {
+            StatusBanner(.syncing, "Syncing your changes…")
+        } else if services.lastSyncFailed {
+            StatusBanner(.offline, "Saved on this device. We'll sync when you're back online.", actionTitle: "Retry") {
+                Task { await services.syncOnce() }
+            }
+        }
     }
 
     private func toggleComplete(_ task: TaskModel) async {

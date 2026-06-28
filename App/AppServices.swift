@@ -67,17 +67,24 @@ final class AppServices {
         await syncEngine.restore(outbox: saved.outbox, cursor: saved.cursor)
     }
 
+    /// Whether a sync cycle is currently in flight — drives the non-blocking Today sync banner (G02-S09).
+    private(set) var isSyncing = false
+    /// True after the most recent sync cycle failed (offline / server unreachable); cleared on success.
+    private(set) var lastSyncFailed = false
+
     /// Run one sync cycle: flush local mutations, then pull deltas (AppSpec §8).
     ///
-    /// Best-effort and safe to call repeatedly. Errors are swallowed in Phase 0; Phase 1 adds
-    /// retry/backoff (see `DefaultSyncEngine` TODOs) and surfaces failures.
+    /// Best-effort and safe to call repeatedly. Surfaces in-flight + failure state via `isSyncing` /
+    /// `lastSyncFailed` so the UI can show a non-blocking offline/syncing banner instead of blocking.
     func syncOnce() async {
-        // TODO(Phase 1): schedule this from BGTaskScheduler + on foreground + after each local
-        //   mutation (debounced), and add backoff/jitter. Phase 0 exposes a manual trigger only.
+        isSyncing = true
+        defer { isSyncing = false }
         do {
             _ = try await syncEngine.flush(using: apiClient)
             _ = try await syncEngine.applyPull(using: apiClient)
+            lastSyncFailed = false
         } catch {
+            lastSyncFailed = true
             #if DEBUG
             print("Sync cycle failed (expected until the backend is reachable): \(error)")
             #endif

@@ -133,7 +133,10 @@ struct InsightsView: View {
             let focus = Analytics.focus(stats)
             let eva = estimateVsActual
 
-            completionCard(completion)
+            NavigationLink {
+                CompletionDetailView(tasks: tasks, interval: interval, now: now)
+            } label: { completionCard(completion) }
+            .buttonStyle(.plain)
             if eva.count > 0 { estimateVsActualCard(eva) }
             productivityCard(byHour)
             if !byList.isEmpty { timeAllocationCard(byList) }
