@@ -62,6 +62,8 @@ struct TodayView: View {
     @State private var toastToken = UUID()
     /// Dismiss flag for the day-health overbooked prompt (journey G02-S07).
     @State private var dismissedDayHealth = false
+    /// Presents the full-screen focus timer when started from the now/next card (journey G02-S05).
+    @State private var showFocus = false
 
     var body: some View {
         NavigationStack {
@@ -149,6 +151,9 @@ struct TodayView: View {
             }
             .sheet(isPresented: $showAssistant) {
                 AIAssistantView().environment(services)
+            }
+            .fullScreenCover(isPresented: $showFocus) {
+                FocusTimerView().environment(services)
             }
             .sheet(isPresented: $showDialPicker) {
                 NavigationStack { DialStylePicker() }
@@ -348,6 +353,17 @@ struct TodayView: View {
                                 Text("\(m)m left").font(.caption).foregroundStyle(.secondary).monospacedDigit()
                             }
                         }
+                        // Make the active block actionable without leaving Today (G02-S05).
+                        HStack(spacing: 8) {
+                            Button { startFocus(taskId: cur.id, title: cur.title) } label: {
+                                Label("Focus", systemImage: "timer")
+                            }
+                            Button { Task { await completeById(cur.id) } } label: {
+                                Label("Complete", systemImage: "checkmark.circle")
+                            }
+                            Spacer()
+                        }
+                        .buttonStyle(.bordered).controlSize(.mini).font(.caption2)
                     }
                     if let nxt = result.next {
                         HStack(spacing: 6) {
@@ -837,6 +853,18 @@ struct TodayView: View {
     private func delete(_ task: TaskModel) async {
         await mutation.delete(task)
         if AppConfig.isLiveSync { await services.syncOnce() }
+    }
+
+    /// Start the focus timer for the now-block's task and present it full-screen (G02-S05).
+    private func startFocus(taskId: String, title: String) {
+        services.focus.start(taskId: taskId, title: title)
+        showFocus = true
+    }
+
+    /// Complete a task by id (used by the now/next card's inline action).
+    private func completeById(_ id: String) async {
+        guard let task = tasks.first(where: { $0.id == id }), task.status != .done else { return }
+        await toggleComplete(task)
     }
 
     private func dueText(for task: TaskModel) -> String? {
