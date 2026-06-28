@@ -2,6 +2,9 @@ import SwiftUI
 import SwiftData
 import SyncCore
 import DesignSystem
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Apple-Calendar-style planner (AppSpec §5.3): Day / Week / Month views over the user's scheduled
 /// tasks, with a navigation header (prev/next + Today) and a scale switcher. The Day view reuses the
@@ -11,6 +14,7 @@ import DesignSystem
 struct CalendarView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) private var theme
+    @Environment(\.openURL) private var openURL
     @Environment(AuthService.self) private var auth
     @Environment(AppServices.self) private var services
 
@@ -36,6 +40,8 @@ struct CalendarView: View {
     /// EventKit free/busy authorization, refreshed on appear; drives the "Connect your calendar" card.
     @State private var calendarAuthorized = false
     @State private var showCalendarSelection = false
+    /// Value pre-prompt shown before the one-shot iOS calendar dialog (journey G05-S08).
+    @State private var showCalendarPrePrompt = false
     @State private var daySlotMinutes = 60
 
     private var cal: Calendar { Calendar.current }
@@ -43,6 +49,13 @@ struct CalendarView: View {
     private var dayHourHeight: CGFloat { 56 * 60 / CGFloat(daySlotMinutes) }
     private let daySlotOptions = [10, 20, 30, 60, 90, 120]
     private func addMonths(_ n: Int) -> Date { cal.startOfDay(for: cal.date(byAdding: .month, value: n, to: selectedDate) ?? selectedDate) }
+
+    /// Open the app's iOS Settings page so a previously-denied user can re-enable calendar access.
+    private func openSettings() {
+        #if canImport(UIKit)
+        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+        #endif
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,6 +72,16 @@ struct CalendarView: View {
         }
         .sheet(isPresented: $showCalendarSelection) {
             CalendarSelectionView().environment(services)
+        }
+        .sheet(isPresented: $showCalendarPrePrompt) {
+            CalendarPermissionPrePrompt(
+                onContinue: {
+                    showCalendarPrePrompt = false
+                    Task { calendarAuthorized = await services.calendar.requestAccess() }
+                },
+                onNotNow: { showCalendarPrePrompt = false }
+            )
+            .presentationDetents([.medium])
         }
         .task { calendarAuthorized = services.calendar.isAuthorized }
         .onAppear {
@@ -304,7 +327,11 @@ struct CalendarView: View {
                 }
                 Spacer()
                 Button("Connect") {
-                    Task { calendarAuthorized = await services.calendar.requestAccess() }
+                    if services.calendar.isDenied {
+                        openSettings() // one-shot prompt already spent; route to Settings (G05-S08/G16)
+                    } else {
+                        showCalendarPrePrompt = true
+                    }
                 }
                 .buttonStyle(.borderedProminent).controlSize(.small)
             }
@@ -709,5 +736,50 @@ struct CalendarView: View {
         await mutation.setSchedule(task, start: date(atMinute: minute, on: day),
                                    end: date(atMinute: min(1440, minute + 60), on: day))
         await syncIfLive()
+    }
+}
+
+/// Calendar permission value pre-prompt (journey G05-S08, US-PLAN-050): explains the device-only
+/// free/busy benefit before the one-shot iOS dialog, so users grant deliberately rather than reflexively
+/// denying. "Continue" then triggers the system prompt; "Not now" leaves access off.
+private struct CalendarPermissionPrePrompt: View {
+    @Environment(\.theme) private var theme
+    let onContinue: () -> Void
+    let onNotNow: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.lg) {
+            VStack(alignment: .leading, spacing: theme.spacing.sm) {
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 44)).foregroundStyle(theme.colors.accent)
+                Text("See your busy times").font(.title2.bold())
+                Text("DoIT can show your Apple Calendar events as busy time on the dial and planner, so Auto-plan never books over a meeting.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            .padding(.top, theme.spacing.lg)
+
+            HStack(alignment: .top, spacing: theme.spacing.md) {
+                Image(systemName: "lock.shield").foregroundStyle(theme.colors.accent).frame(width: 26)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Read on this device only").font(.subheadline.weight(.semibold))
+                    Text("Your events are read locally for free/busy and never sent to the DoIT server.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            VStack(spacing: theme.spacing.sm) {
+                Button(action: onContinue) {
+                    Text("Continue").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .buttonStyle(.borderedProminent)
+                Button(action: onNotNow) {
+                    Text("Not now").font(.subheadline).frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding()
     }
 }

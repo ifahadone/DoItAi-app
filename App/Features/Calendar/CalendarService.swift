@@ -21,6 +21,13 @@ final class CalendarService {
         EKEventStore.authorizationStatus(for: .event) == .fullAccess
     }
 
+    /// The user previously denied/restricted access. The iOS permission dialog is one-shot, so when
+    /// this is true the only path back is the Settings app (journey G05-S08 / G16 permission recovery).
+    var isDenied: Bool {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        return status == .denied || status == .restricted
+    }
+
     /// All event calendars available on the device — for the free/busy selection screen (G05-S09).
     func availableCalendars() -> [CalendarInfo] {
         guard isAuthorized else { return [] }
