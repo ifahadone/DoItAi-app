@@ -373,18 +373,47 @@ final class AppServices {
     }
 
     /// Apply an accepted plan: set each proposed block's task schedule (writes via the normal sync).
-    func applyPlan(_ blocks: [AIProposedBlock]) async {
+    /// A task's schedule before an auto-plan was applied, so the plan can be undone (journey G05-S15).
+    struct PlanScheduleSnapshot: Sendable, Equatable {
+        let taskId: String
+        let start: Date?
+        let end: Date?
+    }
+
+    /// Apply an auto-plan proposal, returning the prior schedule of each touched task so the caller can
+    /// offer Undo (journey G05-S15). Nothing else is mutated.
+    @discardableResult
+    func applyPlan(_ blocks: [AIProposedBlock]) async -> [PlanScheduleSnapshot] {
         let ctx = container.mainContext
         let mutation = TaskMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator)
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var undo: [PlanScheduleSnapshot] = []
         for block in blocks {
             guard let start = parser.date(from: block.startIso), let end = parser.date(from: block.endIso) else { continue }
             let taskId = block.taskId
             var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == taskId })
             descriptor.fetchLimit = 1
             if let task = try? ctx.fetch(descriptor).first {
+                undo.append(PlanScheduleSnapshot(taskId: task.id, start: task.scheduledStart, end: task.scheduledEnd))
                 await mutation.setSchedule(task, start: start, end: end)
+            }
+        }
+        if AppConfig.isLiveSync { await syncOnce() }
+        return undo
+    }
+
+    /// Restore the schedules captured by ``applyPlan(_:)`` — the Undo for an accepted plan (G05-S15).
+    func undoPlan(_ snapshot: [PlanScheduleSnapshot]) async {
+        guard !snapshot.isEmpty else { return }
+        let ctx = container.mainContext
+        let mutation = TaskMutation(context: ctx, engine: syncEngine, clock: clock, idGenerator: idGenerator)
+        for s in snapshot {
+            let taskId = s.taskId
+            var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == taskId })
+            descriptor.fetchLimit = 1
+            if let task = try? ctx.fetch(descriptor).first {
+                await mutation.setSchedule(task, start: s.start, end: s.end)
             }
         }
         if AppConfig.isLiveSync { await syncOnce() }

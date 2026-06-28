@@ -22,6 +22,8 @@ struct AIAssistantView: View {
     @State private var proposal: AIScheduleProposal?
     @State private var planning = false
     @State private var applied = false
+    /// Prior schedules captured when the plan was applied, enabling Undo (journey G05-S15).
+    @State private var planUndo: [AppServices.PlanScheduleSnapshot] = []
     /// Blocks the user has kept in the proposal review (journey G05-S13) — nothing is written until
     /// "Apply" and only these survive. Defaults to every proposed block; the user can drop any.
     @State private var keptBlockIds: Set<String> = []
@@ -102,6 +104,12 @@ struct AIAssistantView: View {
                     .buttonStyle(.plain)
                     .disabled(applied)
                 }
+                // Impossible / overbooked plan (G05-S16): nothing fit at all. Point at the levers.
+                if proposal.blocks.isEmpty && !proposal.unscheduled.isEmpty {
+                    Label("Nothing fit in your free time. Widen your working hours or lower the buffer in Preferences above, or shorten a task below.",
+                          systemImage: "exclamationmark.octagon.fill")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 ForEach(proposal.unscheduled) { item in
                     // Couldn't-fit reasons are actionable (G05-S14): open the task to shorten it, move its
                     // deadline, or schedule it manually.
@@ -120,7 +128,7 @@ struct AIAssistantView: View {
                 if !applied {
                     let kept = proposal.blocks.filter { keptBlockIds.contains($0.id) }
                     Button {
-                        Task { await services.applyPlan(kept); applied = true }
+                        Task { planUndo = await services.applyPlan(kept); applied = true }
                     } label: {
                         Label(kept.isEmpty ? "Select at least one block" : "Apply \(kept.count) block\(kept.count == 1 ? "" : "s")",
                               systemImage: "checkmark.circle")
@@ -129,8 +137,14 @@ struct AIAssistantView: View {
                     Button(role: .destructive) { discardProposal() } label: {
                         Label("Discard proposal", systemImage: "xmark.circle")
                     }
+                } else {
+                    // Plan accepted (G05-S15): confirm + offer to view it on Today, or undo the changes.
+                    Label("Plan applied to your day", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    Button { dismiss() } label: { Label("View on Today", systemImage: "calendar.day.timeline.left") }
+                    Button(role: .destructive) {
+                        Task { await services.undoPlan(planUndo); planUndo = []; applied = false }
+                    } label: { Label("Undo plan", systemImage: "arrow.uturn.backward") }
                 }
-                if applied { Label("Plan applied to your day", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
             }
         } header: {
             Text("Auto-plan")
