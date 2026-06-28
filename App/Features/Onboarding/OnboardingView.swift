@@ -1,12 +1,13 @@
 import SwiftUI
 import DesignSystem
 
-/// First-run onboarding (AppSpec S02), shown once after sign-in and gated by `@AppStorage("hasOnboarded")`.
-/// It teaches the core loop (Capture → Plan → Execute → Reflect), captures the AI-consent choice
-/// (**off by default**, with a plain explanation of what AI does and that it always previews before
-/// writing), and nudges the first task. OS permissions are requested progressively *after* this —
-/// notifications when the tab shell appears, calendar in Plan, location at a location reminder — never
-/// dumped up front here.
+/// First-run onboarding (AppSpec S02 · journey G01), shown once after sign-in and gated by
+/// `@AppStorage("hasOnboarded")`. It teaches the core loop across dedicated value pages
+/// (Capture → Plan → Execute → Reflect, journey frames G01-S05…S07), captures the AI-consent choice
+/// (**off by default**, G01-S08, with a plain explanation that AI always previews before writing),
+/// then shows a notification value pre-prompt (G01-S12) *before* requesting OS access — so the system
+/// prompt only appears once the user has opted in. Calendar/location permission stay progressive
+/// (requested in Plan / at a location reminder), never dumped up front.
 struct OnboardingView: View {
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("pendingFirstQuickAdd") private var pendingFirstQuickAdd = false
@@ -15,14 +16,18 @@ struct OnboardingView: View {
 
     @State private var page = 0
     @State private var aiConsent = false
-    private let pageCount = 3
+    @State private var requestingNotifications = false
+    private let pageCount = 6
 
     var body: some View {
         VStack(spacing: 0) {
             TabView(selection: $page) {
                 welcome.tag(0)
-                loop.tag(1)
-                aiPage.tag(2)
+                capture.tag(1)
+                plan.tag(2)
+                execute.tag(3)
+                aiPage.tag(4)
+                notifications.tag(5)
             }
             .tabViewStyle(.page(indexDisplayMode: .always))
             .animation(.snappy, value: page)
@@ -43,33 +48,43 @@ struct OnboardingView: View {
 
     // MARK: Page 0 — the dial hero
     private var welcome: some View {
-        VStack(spacing: theme.spacing.xl) {
-            Spacer()
+        page0(title: "Your day, as a dial",
+              sub: "DoIT turns tasks into time you can see — on a 24-hour sectograph, an Apple-Calendar-style planner, and home-screen widgets.") {
             SectographDial(items: DialPreviewSample.items, titles: DialPreviewSample.titles, style: .aurora)
                 .frame(width: 240, height: 240)
                 .accessibilityHidden(true)
-            VStack(spacing: theme.spacing.sm) {
-                Text("Your day, as a dial").font(.title.bold())
-                Text("DoIT turns tasks into time you can see — on a 24-hour sectograph, an Apple-Calendar-style planner, and home-screen widgets.")
-                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            }
-            .padding(.horizontal, theme.spacing.xl)
-            Spacer()
         }
     }
 
-    // MARK: Page 1 — the loop
-    private var loop: some View {
+    // MARK: Page 1 — Capture (G01-S05)
+    private var capture: some View {
+        page0(title: "Capture in a second",
+              sub: "Type or dictate in plain language — “Call the dentist tomorrow 9am #health !p2”. DoIT parses it into a task you can review before saving.") {
+            heroIcon("mic.circle.fill")
+        }
+    }
+
+    // MARK: Page 2 — Plan & Sectograph (G01-S06)
+    private var plan: some View {
+        page0(title: "Plan becomes visible time",
+              sub: "Drag tasks onto a calendar-style day, or let Auto-plan place them around your meetings. Every block shows up on the dial.") {
+            SectographDial(items: DialPreviewSample.items, titles: DialPreviewSample.titles, style: .aurora)
+                .frame(width: 200, height: 200)
+                .accessibilityHidden(true)
+        }
+    }
+
+    // MARK: Page 3 — Execute & Reflect (G01-S07)
+    private var execute: some View {
         VStack(alignment: .leading, spacing: theme.spacing.xl) {
             Spacer()
-            Text("One simple loop")
+            Text("Execute, then reflect")
                 .font(.title.bold())
                 .frame(maxWidth: .infinity, alignment: .center)
             VStack(alignment: .leading, spacing: theme.spacing.lg) {
-                row("square.and.pencil", "Capture", "Type or dictate — DoIT parses it into a task.")
-                row("calendar", "Plan", "Drag tasks into your day, or let Auto-plan place them.")
-                row("timer", "Execute", "Start Focus and the dial counts the block down.")
-                row("chart.bar", "Reflect", "Insights show where your time actually went.")
+                row("timer", "Focus", "Start a block and the dial counts it down. Actual time is logged automatically.")
+                row("repeat", "Routines & streaks", "Chain your morning steps and keep habit streaks honest.")
+                row("chart.bar.xaxis", "Insights", "See completion, focus time and where your week actually went.")
             }
             .padding(.horizontal, theme.spacing.xl)
             Spacer()
@@ -89,13 +104,11 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: Page 2 — AI consent (opt-in)
+    // MARK: Page 4 — AI consent (opt-in, G01-S08)
     private var aiPage: some View {
         VStack(spacing: theme.spacing.xl) {
             Spacer()
-            Image(systemName: "sparkles")
-                .font(.system(size: 56))
-                .foregroundStyle(theme.colors.accent)
+            heroIcon("sparkles")
             VStack(spacing: theme.spacing.sm) {
                 Text("AI, on your terms").font(.title.bold())
                 Text("Turn on AI to parse what you capture, propose schedules, and write a weekly review. It always shows a preview — you confirm before anything is written. Off by default; change it anytime in Settings.")
@@ -109,30 +122,77 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: Footer
+    // MARK: Page 5 — Notification value pre-prompt (G01-S12)
+    private var notifications: some View {
+        VStack(spacing: theme.spacing.xl) {
+            Spacer()
+            heroIcon("bell.badge.fill")
+            VStack(spacing: theme.spacing.sm) {
+                Text("Reminders that respect you").font(.title.bold())
+                Text("DoIT can nudge you before a task is due and ring routine alarms. It honors Quiet Hours and never spams you. You can turn this on now or later in Settings.")
+                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, theme.spacing.xl)
+            VStack(spacing: theme.spacing.md) {
+                Button {
+                    requestingNotifications = true
+                    Task {
+                        await services.requestNotificationAuthorization()
+                        finish(openQuickAdd: true)
+                    }
+                } label: {
+                    Label("Turn on reminders", systemImage: "bell")
+                        .font(.headline).frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(requestingNotifications)
+
+                Button("Not now") { finish(openQuickAdd: true) }
+                    .font(.subheadline)
+                    .disabled(requestingNotifications)
+            }
+            .padding(.horizontal, theme.spacing.xl)
+            Spacer()
+        }
+    }
+
+    // MARK: Footer (value/consent pages only; the notification page carries its own CTAs)
     private var footer: some View {
-        VStack(spacing: theme.spacing.md) {
+        Group {
             if page < pageCount - 1 {
                 Button { withAnimation(.snappy) { page += 1 } } label: {
                     Text("Continue").font(.headline).frame(maxWidth: .infinity, minHeight: 50)
                 }
                 .buttonStyle(.borderedProminent)
-            } else {
-                Button { finish(openQuickAdd: true) } label: {
-                    Label("Create your first task", systemImage: "plus")
-                        .font(.headline).frame(maxWidth: .infinity, minHeight: 50)
-                }
-                .buttonStyle(.borderedProminent)
-                Button("Maybe later") { finish(openQuickAdd: false) }
-                    .font(.subheadline)
+                .padding(.horizontal, theme.spacing.xl)
+                .padding(.bottom, theme.spacing.lg)
             }
         }
-        .padding(.horizontal, theme.spacing.xl)
-        .padding(.bottom, theme.spacing.lg)
     }
 
-    /// Persist the AI choice, optionally queue the guided first Quick Add, and dismiss onboarding by
-    /// flipping `hasOnboarded` (which routes `RootView` to the tab shell).
+    // MARK: Reusable page scaffold (centered hero + title + subtitle)
+    private func page0<Hero: View>(title: String, sub: String, @ViewBuilder hero: () -> Hero) -> some View {
+        VStack(spacing: theme.spacing.xl) {
+            Spacer()
+            hero()
+            VStack(spacing: theme.spacing.sm) {
+                Text(title).font(.title.bold())
+                Text(sub).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, theme.spacing.xl)
+            Spacer()
+        }
+    }
+
+    private func heroIcon(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 64))
+            .foregroundStyle(theme.colors.accent)
+            .accessibilityHidden(true)
+    }
+
+    /// Persist the AI choice, optionally queue the guided first Quick Add (G01-S09→S11), and dismiss
+    /// onboarding by flipping `hasOnboarded` (which routes `RootView` to the tab shell).
     private func finish(openQuickAdd: Bool) {
         let consent = aiConsent
         Task { await services.setAiConsent(consent) }

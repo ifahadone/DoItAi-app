@@ -21,6 +21,9 @@ struct FocusTimerView: View {
 
     private let runningAccent = Color(hex: "#FF453A") ?? .red
     private let pausedAccent = Color(hex: "#FF9F0A") ?? .orange
+    private let doneAccent = Color(hex: "#34C759") ?? .green
+    /// Set when the user stops — presents the planned-vs-actual completion summary (G06-S05 / S06).
+    @State private var summary: FocusSummary?
     /// When the task has no scheduled block to size the ring against, fall back to a 25-min focus block.
     private let defaultTargetMinutes = 25
 
@@ -30,6 +33,7 @@ struct FocusTimerView: View {
                 Color.black.ignoresSafeArea()
                 content
             }
+            .overlay { if let summary { completionOverlay(summary) } }
             .navigationTitle("Focus")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -103,7 +107,7 @@ struct FocusTimerView: View {
             .tint(.white)
 
             Button(role: .destructive) {
-                Task { await stop() }
+                beginStop(session)
             } label: {
                 Label("Stop", systemImage: "stop.fill")
                     .font(.headline)
@@ -130,18 +134,89 @@ struct FocusTimerView: View {
         return (c.hour ?? 0) * 60 + (c.minute ?? 0)
     }
 
-    private func stop() async {
+    /// Stop the session and present a completion summary (planned vs actual). The user then chooses to
+    /// mark the task done, save partial progress and keep it open, or discard the time (G06-S05 / S06).
+    private func beginStop(_ session: FocusSession) {
+        let dayItems = DayDial.items(tasks: tasks, lists: lists, now: services.clock.now())
+        let planned = targetMinutes(session, items: dayItems)
+        let title = session.taskTitle
         guard let result = services.focus.stop() else { dismiss(); return }
-        let taskId = result.taskId
+        summary = FocusSummary(taskId: result.taskId, title: title, planned: planned, actual: result.minutes)
+    }
+
+    /// Apply the chosen outcome: optionally log the focused minutes onto the task and/or mark it done.
+    private func apply(_ s: FocusSummary, markDone: Bool, keepTime: Bool) async {
+        let taskId = s.taskId
         var descriptor = FetchDescriptor<TaskModel>(predicate: #Predicate { $0.id == taskId })
         descriptor.fetchLimit = 1
         if let task = try? modelContext.fetch(descriptor).first {
             let mutation = TaskMutation(context: modelContext, engine: services.syncEngine,
                                         clock: services.clock, idGenerator: services.idGenerator)
-            await mutation.addActualMinutes(task, result.minutes)
+            if keepTime && s.actual > 0 { await mutation.addActualMinutes(task, s.actual) }
+            if markDone && task.status != .done { await mutation.toggleComplete(task) }
             if AppConfig.isLiveSync { await services.syncOnce() }
         }
         dismiss()
+    }
+
+    // MARK: - Completion summary overlay (planned vs actual)
+
+    @ViewBuilder private func completionOverlay(_ s: FocusSummary) -> some View {
+        ZStack {
+            Color.black.opacity(0.6).ignoresSafeArea()
+            VStack(spacing: 22) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 44)).foregroundStyle(doneAccent)
+                VStack(spacing: 4) {
+                    Text("Session complete").font(.title3.weight(.semibold)).foregroundStyle(.white)
+                    Text(s.title).font(.subheadline).foregroundStyle(.white.opacity(0.7))
+                        .multilineTextAlignment(.center).lineLimit(2)
+                }
+                HStack(spacing: 0) {
+                    stat("Planned", "\(s.planned)m", .white.opacity(0.85))
+                    Divider().frame(height: 36).overlay(.white.opacity(0.2))
+                    stat("Focused", "\(s.actual)m", doneAccent)
+                }
+                Text(deltaText(s)).font(.caption).foregroundStyle(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+
+                VStack(spacing: 10) {
+                    Button { Task { await apply(s, markDone: true, keepTime: true) } } label: {
+                        Label("Mark as done", systemImage: "checkmark.circle.fill")
+                            .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+                    }
+                    .buttonStyle(.borderedProminent).tint(doneAccent)
+
+                    Button { Task { await apply(s, markDone: false, keepTime: true) } } label: {
+                        Label("Save progress · keep open", systemImage: "clock.arrow.circlepath")
+                            .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+                    }
+                    .buttonStyle(.bordered).tint(.white)
+
+                    Button("Discard time") { Task { await apply(s, markDone: false, keepTime: false) } }
+                        .font(.subheadline).foregroundStyle(.white.opacity(0.6))
+                }
+            }
+            .padding(28)
+            .frame(maxWidth: 360)
+            .background(Color(hex: "#1C1C1E") ?? .black, in: RoundedRectangle(cornerRadius: 24))
+            .padding(24)
+        }
+    }
+
+    private func stat(_ label: String, _ value: String, _ color: Color) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(.title2.weight(.bold)).foregroundStyle(color)
+            Text(label).font(.caption).foregroundStyle(.white.opacity(0.5))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func deltaText(_ s: FocusSummary) -> String {
+        let d = s.actual - s.planned
+        if s.planned == 0 { return "No planned duration — logged \(s.actual)m of focus." }
+        if d == 0 { return "Right on plan." }
+        return d > 0 ? "\(d)m over the planned block." : "\(-d)m under the planned block."
     }
 
     static func clockString(_ seconds: Double) -> String {
@@ -149,4 +224,13 @@ struct FocusTimerView: View {
         let h = total / 3600, m = (total % 3600) / 60, s = total % 60
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
     }
+}
+
+/// The planned-vs-actual snapshot captured when a focus session is stopped, driving the completion summary.
+private struct FocusSummary: Identifiable {
+    let id = UUID()
+    let taskId: String
+    let title: String
+    let planned: Int
+    let actual: Int
 }
