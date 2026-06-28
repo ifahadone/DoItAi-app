@@ -16,6 +16,8 @@ struct QuickAddView: View {
     @State private var aiBusy = false
     /// Live voice dictation into the NL field (FR-QADD-080).
     @State private var dictation = SpeechDictation()
+    /// Backing date for the editable due picker when the user adds a due date manually (G03-S06).
+    @State private var dueDraft = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date()
 
     var body: some View {
         NavigationStack {
@@ -51,19 +53,43 @@ struct QuickAddView: View {
                 }
 
                 if !parsed.title.isEmpty {
-                    Section("Preview") {
-                        LabeledContent("Title", value: parsed.title)
-                        if let due = parsed.dueAt {
-                            LabeledContent("Due", value: due.formatted(date: .abbreviated, time: .shortened))
+                    Section {
+                        // Editable preview (US-CAP-010): every parsed field is correctable before save.
+                        TextField("Title", text: $parsed.title, axis: .vertical)
+
+                        Toggle("Due date", isOn: Binding(
+                            get: { parsed.dueAt != nil },
+                            set: { on in parsed.dueAt = on ? dueDraft : nil }
+                        ))
+                        if parsed.dueAt != nil {
+                            DatePicker("Due", selection: Binding(
+                                get: { parsed.dueAt ?? dueDraft },
+                                set: { parsed.dueAt = $0; dueDraft = $0 }
+                            ))
+                            if dueTimeIsAmbiguous {
+                                Label("Time not specified — defaulting to midnight. Set a time if needed.",
+                                      systemImage: "exclamationmark.triangle.fill")
+                                    .font(.caption).foregroundStyle(.orange)
+                            }
                         }
-                        if parsed.priority != .none {
-                            LabeledContent("Priority") { PriorityChip(level: parsed.priority.rawValue) }
+
+                        Picker("Priority", selection: $parsed.priority) {
+                            Text("None").tag(Priority.none)
+                            Text("P1").tag(Priority.p1)
+                            Text("P2").tag(Priority.p2)
+                            Text("P3").tag(Priority.p3)
+                            Text("P4").tag(Priority.p4)
                         }
+
                         if !parsed.tagNames.isEmpty {
                             LabeledContent("Tags") {
                                 HStack { ForEach(parsed.tagNames, id: \.self) { TagPill(name: $0) } }
                             }
                         }
+                    } header: {
+                        Text("Preview")
+                    } footer: {
+                        Text("AI and local parsing fill these in — correct anything before saving.")
                     }
                 }
             }
@@ -84,6 +110,14 @@ struct QuickAddView: View {
                 }
             }
         }
+    }
+
+    /// A parsed due date sitting exactly on midnight usually means a day was understood but no time
+    /// (US-CAP-030): flag it so the user can disambiguate rather than silently scheduling at 00:00.
+    private var dueTimeIsAmbiguous: Bool {
+        guard let due = parsed.dueAt else { return false }
+        let c = Calendar.current.dateComponents([.hour, .minute], from: due)
+        return (c.hour ?? 0) == 0 && (c.minute ?? 0) == 0
     }
 
     private var ownerId: String {
