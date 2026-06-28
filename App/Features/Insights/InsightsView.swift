@@ -291,18 +291,24 @@ struct InsightsView: View {
 
     private func habitCard(_ habit: RoutineModel) -> some View {
         let days = HabitHeatmap.days(completions: Set(habit.completions), days: 70, today: services.clock.now())
-        return VStack(alignment: .leading, spacing: theme.spacing.sm) {
-            HStack {
-                Text(habit.name.isEmpty ? "Untitled habit" : habit.name).font(.subheadline.weight(.medium))
-                Spacer()
-                Text("🔥 \(habit.streakCurrent)").font(.subheadline)
+        return NavigationLink {
+            HabitDetailView(habit: habit).environment(services)
+        } label: {
+            VStack(alignment: .leading, spacing: theme.spacing.sm) {
+                HStack {
+                    Text(habit.name.isEmpty ? "Untitled habit" : habit.name).font(.subheadline.weight(.medium))
+                    Spacer()
+                    Label("\(habit.streakCurrent)", systemImage: "flame.fill")
+                        .font(.subheadline).labelStyle(.titleAndIcon).foregroundStyle(.orange)
+                }
+                Text("Best \(habit.streakLongest) · \(HabitHeatmap.completedCount(in: days)) of last 70 days")
+                    .font(.caption2).foregroundStyle(.secondary)
+                heatmap(days)
             }
-            Text("Best \(habit.streakLongest) · \(HabitHeatmap.completedCount(in: days)) of last 70 days")
-                .font(.caption2).foregroundStyle(.secondary)
-            heatmap(days)
+            .padding(theme.spacing.md)
+            .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.medium))
         }
-        .padding(theme.spacing.md)
-        .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.medium))
+        .buttonStyle(.plain)
     }
 
     private func heatmap(_ days: [HeatmapDay]) -> some View {
