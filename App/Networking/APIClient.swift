@@ -282,6 +282,19 @@ actor APIClient: SyncTransport {
         return r.comment
     }
 
+    /// Assign (or clear, with nil) a task to a share member via the dedicated REST endpoint
+    /// (`POST /tasks/:id/assign`) — the server validates the assignee is a member of the list's share
+    /// (journey G04-S08). Returns the new server version so the caller can reconcile.
+    @discardableResult
+    func assignTask(taskId: String, assigneeUserId: String?) async throws -> Int {
+        struct Body: Encodable, Sendable { let assigneeUserId: String? }
+        struct TaskField: Decodable { let assigneeUserId: String?; let serverVersion: Int }
+        struct R: Decodable { let task: TaskField }
+        let r: R = try await send(method: "POST", path: "tasks/\(taskId)/assign",
+                                  body: Body(assigneeUserId: assigneeUserId), authenticated: true, idempotent: false)
+        return r.task.serverVersion
+    }
+
     func wsTicket() async throws -> String {
         struct R: Decodable { let ticket: String }
         let r: R = try await send(method: "POST", path: "ws/ticket", bodyData: nil, authenticated: true, idempotent: false)

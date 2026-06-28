@@ -31,6 +31,9 @@ struct TaskDetailView: View {
     @State private var showTimeReminder = false
     @State private var timeDraft = Date().addingTimeInterval(3600)
     @State private var showRecurrenceEditor = false
+    /// Members of the task's shared list, for the assignee picker (journey G04-S08); empty unless shared.
+    @State private var shareMembers: [ShareMemberDTO] = []
+    @State private var assigneeLoading = false
 
     private var mutation: TaskMutation {
         TaskMutation(context: modelContext, engine: services.syncEngine,
@@ -130,6 +133,30 @@ struct TaskDetailView: View {
                     Toggle("Has due date", isOn: $hasDueDate)
                     if hasDueDate {
                         DatePicker("Due", selection: $dueDraft)
+                    }
+                }
+
+                if taskShareId != nil {
+                    Section {
+                        if assigneeLoading && shareMembers.isEmpty {
+                            HStack { Text("Loading members…").foregroundStyle(.secondary); Spacer(); ProgressView() }
+                        } else if shareMembers.isEmpty {
+                            Text("No members to assign yet.").foregroundStyle(.secondary)
+                        } else {
+                            Picker("Assigned to", selection: Binding(
+                                get: { task.assigneeUserId ?? "" },
+                                set: { newVal in Task { await setAssignee(newVal.isEmpty ? nil : newVal) } }
+                            )) {
+                                Text("Unassigned").tag("")
+                                ForEach(shareMembers) { m in
+                                    Text(memberLabel(m)).tag(m.userId)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Assignee")
+                    } footer: {
+                        Text("Only members of this shared list can be assigned. Assignment syncs to everyone.")
                     }
                 }
 
@@ -274,7 +301,40 @@ struct TaskDetailView: View {
                 loadReminders()
                 loadChecklist()
             }
+            .task { await loadMembersIfShared() }
         }
+    }
+
+    // MARK: - Assignee (journey G04-S08)
+
+    /// The share id of the task's list, when the list is shared — gates the assignee picker.
+    private var taskShareId: String? {
+        guard let listId = task.listId else { return nil }
+        return lists.first { $0.id == listId }?.shareId
+    }
+
+    private func loadMembersIfShared() async {
+        guard let shareId = taskShareId else { return }
+        assigneeLoading = true
+        defer { assigneeLoading = false }
+        shareMembers = (try? await services.apiClient.shareMembers(shareId: shareId)) ?? []
+    }
+
+    /// Assign (or clear) via the server's membership-validated endpoint, then reconcile via sync.
+    private func setAssignee(_ userId: String?) async {
+        guard task.assigneeUserId != userId else { return }
+        do {
+            _ = try await services.apiClient.assignTask(taskId: task.id, assigneeUserId: userId)
+            task.assigneeUserId = userId
+            if AppConfig.isLiveSync { await services.syncOnce() } // pull authoritative serverVersion
+        } catch {
+            // Leave the prior assignment on failure; the picker reflects the unchanged model.
+        }
+    }
+
+    private func memberLabel(_ m: ShareMemberDTO) -> String {
+        let who = m.userId == services.currentOwnerId ? "You" : String(m.userId.prefix(8))
+        return "\(who) · \(m.role.capitalized)"
     }
 
     /// One reminder row — a place (kind 2) or a time (kind 0/1).
