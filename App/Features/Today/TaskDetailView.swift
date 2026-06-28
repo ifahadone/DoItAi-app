@@ -33,6 +33,8 @@ struct TaskDetailView: View {
     @State private var showLocationReminder = false
     @State private var showTimeReminder = false
     @State private var timeDraft = Date().addingTimeInterval(3600)
+    /// Interruption level for a new time reminder (journey G13-S07): passive(0)/active(1)/time-sensitive(2).
+    @State private var reminderLevel = 1
     @State private var showRecurrenceEditor = false
     /// Members of the task's shared list, for the assignee picker (journey G04-S08); empty unless shared.
     @State private var shareMembers: [ShareMemberDTO] = []
@@ -321,7 +323,18 @@ struct TaskDetailView: View {
             }
             .sheet(isPresented: $showTimeReminder) {
                 NavigationStack {
-                    Form { DatePicker("Remind me at", selection: $timeDraft) }
+                    Form {
+                        DatePicker("Remind me at", selection: $timeDraft)
+                        Picker("Alert style", selection: $reminderLevel) {
+                            Text("Passive").tag(0)
+                            Text("Active").tag(1)
+                            Text("Time-Sensitive").tag(2)
+                        }
+                        Text(reminderLevel == 0 ? "Delivered quietly to Notification Center."
+                             : reminderLevel == 2 ? "Breaks through Focus and silent mode when you allow it."
+                             : "Standard banner with sound.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                         .navigationTitle("Time Reminder")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
@@ -477,7 +490,7 @@ struct TaskDetailView: View {
     }
 
     private func addTimeReminder() async {
-        await reminderMutation.createAbsolute(taskId: task.id, fireAt: timeDraft)
+        await reminderMutation.createAbsolute(taskId: task.id, fireAt: timeDraft, interruption: reminderLevel)
         _ = await services.scheduleReminders() // re-arm the 64-cap notification window (P1-I)
         await syncIfLive()
         loadReminders()
