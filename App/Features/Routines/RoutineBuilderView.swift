@@ -90,6 +90,7 @@ struct RoutineBuilderView: View {
                         Stepper("Grace days: \(graceDays)", value: $graceDays, in: 0...7)
                     }
                 }
+                previewSection
             }
             .navigationTitle(routine == nil ? (isHabit ? "New Habit" : "New Routine") : "Edit")
             .navigationBarTitleDisplayMode(.inline)
@@ -102,6 +103,49 @@ struct RoutineBuilderView: View {
                 if !isHabit { ToolbarItem(placement: .topBarLeading) { EditButton() } }
             }
             .onAppear(perform: load)
+        }
+    }
+
+    /// The next few dates this routine/habit will materialize on, given the chosen weekdays + anchor —
+    /// a preview so recurrence mistakes are caught before saving (US-ROUT-020, journey G07-S10).
+    private var upcomingRuns: [Date] {
+        let cal = Calendar.current
+        let now = services.clock.now()
+        var results: [Date] = []
+        var day = cal.startOfDay(for: now)
+        var guardCount = 0
+        while results.count < 5 && guardCount < 90 {
+            guardCount += 1
+            let weekday = cal.component(.weekday, from: day)
+            if weekdays.isEmpty || weekdays.contains(weekday) {
+                var d = day
+                if anchorEnabled && !isHabit {
+                    let c = cal.dateComponents([.hour, .minute], from: anchorDate)
+                    d = cal.date(bySettingHour: c.hour ?? 0, minute: c.minute ?? 0, second: 0, of: day) ?? day
+                }
+                results.append(d)
+            }
+            day = cal.date(byAdding: .day, value: 1, to: day) ?? day
+        }
+        return results
+    }
+
+    @ViewBuilder private var previewSection: some View {
+        Section {
+            ForEach(upcomingRuns, id: \.self) { date in
+                HStack(spacing: 10) {
+                    Image(systemName: "calendar").foregroundStyle(.secondary)
+                    Text(date.formatted(date: .abbreviated, time: (anchorEnabled && !isHabit) ? .shortened : .omitted))
+                        .font(.subheadline)
+                    if Calendar.current.isDateInToday(date) {
+                        Text("Today").font(.caption2.weight(.semibold)).foregroundStyle(.tint)
+                    }
+                }
+            }
+        } header: {
+            Text("Next runs")
+        } footer: {
+            Text(weekdays.isEmpty ? "Repeats every day." : "Repeats on the selected days.")
         }
     }
 
