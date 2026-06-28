@@ -26,6 +26,9 @@ struct FocusTimerView: View {
     @State private var summary: FocusSummary?
     /// Minutes added to the countdown target via "Extend" during a running session (journey G06-S03).
     @State private var extraMinutes = 0
+    /// Quick-note capture during a session (journey G06-S01) — appended to the task's notes.
+    @State private var showNote = false
+    @State private var noteDraft = ""
     /// When the task has no scheduled block to size the ring against, fall back to a 25-min focus block.
     private let defaultTargetMinutes = 25
 
@@ -46,6 +49,40 @@ struct FocusTimerView: View {
         }
         .preferredColorScheme(.dark)
         .presentationBackground(.black)
+        .sheet(isPresented: $showNote) {
+            NavigationStack {
+                Form {
+                    Section {
+                        TextField("Capture a thought…", text: $noteDraft, axis: .vertical).lineLimit(3...8)
+                    } header: {
+                        Text("Add to task notes")
+                    }
+                }
+                .navigationTitle("Quick Note")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Add") { showNote = false; Task { await appendNote() } }
+                            .disabled(noteDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showNote = false } }
+                }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+
+    /// Append the quick note to the focused task's notes (journey G06-S01), without interrupting timing.
+    private func appendNote() async {
+        let text = noteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let taskId = services.focus.session?.taskId,
+              let task = tasks.first(where: { $0.id == taskId }) else { return }
+        let existing = task.notes ?? ""
+        let combined = existing.isEmpty ? text : existing + "\n" + text
+        let mutation = TaskMutation(context: modelContext, engine: services.syncEngine,
+                                    clock: services.clock, idGenerator: services.idGenerator)
+        await mutation.setNotes(task, combined)
+        if AppConfig.isLiveSync { await services.syncOnce() }
     }
 
     @ViewBuilder private var content: some View {
@@ -96,23 +133,35 @@ struct FocusTimerView: View {
 
     @ViewBuilder private func controls(_ session: FocusSession) -> some View {
         VStack(spacing: 12) {
-            // Extend the countdown without stopping (journey G06-S03) — useful when a block runs long.
-            Menu {
-                Button("+5 minutes") { extraMinutes += 5 }
-                Button("+10 minutes") { extraMinutes += 10 }
-                Button("+15 minutes") { extraMinutes += 15 }
-                if extraMinutes > 0 {
-                    Button("Reset extension", role: .destructive) { extraMinutes = 0 }
+            HStack(spacing: 12) {
+                // Extend the countdown without stopping (journey G06-S03) — useful when a block runs long.
+                Menu {
+                    Button("+5 minutes") { extraMinutes += 5 }
+                    Button("+10 minutes") { extraMinutes += 10 }
+                    Button("+15 minutes") { extraMinutes += 15 }
+                    if extraMinutes > 0 {
+                        Button("Reset extension", role: .destructive) { extraMinutes = 0 }
+                    }
+                } label: {
+                    Label(extraMinutes > 0 ? "Extended +\(extraMinutes)m" : "Extend",
+                          systemImage: "plus.circle")
+                        .font(.subheadline.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
                 }
-            } label: {
-                Label(extraMinutes > 0 ? "Extended +\(extraMinutes)m" : "Extend",
-                      systemImage: "plus.circle")
-                    .font(.subheadline.weight(.medium))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
+                .buttonStyle(.bordered)
+                .tint(.white)
+
+                // Jot a quick note without leaving focus (journey G06-S01).
+                Button { noteDraft = ""; showNote = true } label: {
+                    Label("Note", systemImage: "square.and.pencil")
+                        .font(.subheadline.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.bordered)
+                .tint(.white)
             }
-            .buttonStyle(.bordered)
-            .tint(.white)
 
             HStack(spacing: 16) {
                 Button {
