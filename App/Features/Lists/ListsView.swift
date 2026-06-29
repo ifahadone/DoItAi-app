@@ -129,5 +129,5 @@ struct ListsView: View {
     private func deleteList(_ list: TaskListModel) async { await listMutation.delete(list); await syncIfLive() }
     private func deleteTag(_ tag: TagModel) async { await tagMutation.delete(tag); await syncIfLive() }
 
-    private func syncIfLive() async { if AppConfig.isLiveSync { await services.syncOnce() } }
+    private func syncIfLive() async { await services.syncOnce() }
 }

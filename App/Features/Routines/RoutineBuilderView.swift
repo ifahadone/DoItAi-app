@@ -224,7 +224,7 @@ struct RoutineBuilderView: View {
             await mutation.create(name: name, isHabit: isHabit, steps: ordered, anchorTime: anchorTime,
                                   recurrence: recurrence, chained: chained, graceDays: graceDays, colorHex: colorHex)
         }
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
         dismiss()
     }
 

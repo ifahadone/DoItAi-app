@@ -82,7 +82,7 @@ struct FocusTimerView: View {
         let mutation = TaskMutation(context: modelContext, engine: services.syncEngine,
                                     clock: services.clock, idGenerator: services.idGenerator)
         await mutation.setNotes(task, combined)
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
     }
 
     @ViewBuilder private var content: some View {
@@ -228,7 +228,7 @@ struct FocusTimerView: View {
                                         clock: services.clock, idGenerator: services.idGenerator)
             if keepTime && s.actual > 0 { await mutation.addActualMinutes(task, s.actual) }
             if markDone && task.status != .done { await mutation.toggleComplete(task) }
-            if AppConfig.isLiveSync { await services.syncOnce() }
+            await services.syncOnce()
         }
         dismiss()
     }

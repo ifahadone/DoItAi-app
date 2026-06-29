@@ -520,7 +520,7 @@ struct TodayView: View {
             let newDue = cal.date(bySettingHour: t.hour ?? 9, minute: t.minute ?? 0, second: 0, of: now) ?? now
             await mutation.reschedule(task, dueAt: newDue)
         }
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
     }
 
     /// Long-press context menu for a task row: complete, reschedule presets, open, delete (FR-TASK-190).
@@ -550,20 +550,20 @@ struct TodayView: View {
     /// Cancel a task — kept (not deleted), leaves the active list (FR-TASK-180).
     private func cancelTask(_ task: TaskModel) async {
         await mutation.cancel(task)
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
     }
 
     /// Archive a task — kept (not deleted), leaves the active list (FR-TASK-180).
     private func archiveTask(_ task: TaskModel) async {
         await mutation.setArchived(task, true)
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
     }
 
     /// Apply a one-tap reschedule preset to a task's due date (FR-TASK-160).
     private func reschedule(_ task: TaskModel, preset: ReschedulePreset) async {
         guard let date = preset.date(from: services.clock.now()) else { return }
         await mutation.reschedule(task, dueAt: date)
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
     }
 
     private var emptyState: some View {
@@ -593,7 +593,7 @@ struct TodayView: View {
         )
         await creator.createTask(title: title)
         // Flush the new task to the server when live-syncing (DevelopmentPlan P1-D).
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
     }
 
     /// Resolve a task's parent list (if assigned + already synced locally) for the row chip.
@@ -773,7 +773,7 @@ struct TodayView: View {
 
     private func logHabit(_ habit: RoutineModel) async {
         _ = await mutation(for: habit).logHabitToday(habit)
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
     }
 
     /// "yyyy-MM-dd" day key (matches `RoutineMutation.logHabitToday` + the heatmap's completion keys).
@@ -839,7 +839,7 @@ struct TodayView: View {
 
     private func toggleComplete(_ task: TaskModel) async {
         await mutation.toggleComplete(task)
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
         if task.status == .done {
             let token = UUID(); toastToken = token
             withAnimation(.snappy) { lastCompleted = task }
@@ -856,13 +856,13 @@ struct TodayView: View {
     private func undoComplete() async {
         guard let task = lastCompleted else { return }
         await mutation.toggleComplete(task)
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
         withAnimation(.snappy) { lastCompleted = nil }
     }
 
     private func delete(_ task: TaskModel) async {
         await mutation.delete(task)
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
     }
 
     /// Start the focus timer for the now-block's task and present it full-screen (G02-S05).

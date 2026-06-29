@@ -86,11 +86,24 @@ final class AppServices {
     /// observes this, presents the detail, and clears it.
     var pendingOpenTaskId: String?
 
+    /// Whether cloud sync should run: a signed-in **cloud** account (not local-first, not a demo/UI-test
+    /// launch), or the `-liveSync` dev flag. This replaces the old DEBUG-only `isLiveSync` gate so that
+    /// real signed-in users sync in **release** builds too (DevelopmentPlan P1: "for all signed-in
+    /// sessions, not just the dev demo mode"). Local-first sessions (`userId == nil`) stay device-only.
+    var cloudSyncEnabled: Bool {
+        if AppConfig.isUIDemo || AppConfig.isRunningDemo { return false }
+        if AppConfig.isLiveSync { return true }
+        if case let .signedIn(userId) = auth.state, userId != nil, !auth.isLocalMode { return true }
+        return false
+    }
+
     /// Run one sync cycle: flush local mutations, then pull deltas (AppSpec §8).
     ///
-    /// Best-effort and safe to call repeatedly. Surfaces in-flight + failure state via `isSyncing` /
-    /// `lastSyncFailed` so the UI can show a non-blocking offline/syncing banner instead of blocking.
+    /// Best-effort and safe to call repeatedly; **self-gates** on ``cloudSyncEnabled`` so callers can
+    /// invoke it unconditionally. Surfaces in-flight + failure state via `isSyncing` / `lastSyncFailed`
+    /// so the UI can show a non-blocking offline/syncing banner instead of blocking.
     func syncOnce() async {
+        guard cloudSyncEnabled else { return }
         isSyncing = true
         defer { isSyncing = false }
         do {
@@ -403,7 +416,7 @@ final class AppServices {
                 await mutation.setSchedule(task, start: start, end: end)
             }
         }
-        if AppConfig.isLiveSync { await syncOnce() }
+        await syncOnce()
         return undo
     }
 
@@ -420,7 +433,7 @@ final class AppServices {
                 await mutation.setSchedule(task, start: s.start, end: s.end)
             }
         }
-        if AppConfig.isLiveSync { await syncOnce() }
+        await syncOnce()
     }
 
     /// Stream today's morning brief (empty stream if AI is off).

@@ -688,7 +688,7 @@ struct CalendarView: View {
         if case let .signedIn(userId) = auth.state, let userId { return userId }
         return "local-user"
     }
-    private func syncIfLive() async { if AppConfig.isLiveSync { await services.syncOnce() } }
+    private func syncIfLive() async { await services.syncOnce() }
 
     private func date(atMinute minute: Int, on day: Date) -> Date {
         // Resolve the wall-clock time via components (DST-correct) rather than adding minutes to midnight.

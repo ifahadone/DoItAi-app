@@ -98,7 +98,7 @@ struct KeeperView: View {
         await folderMutation.delete(folder)
         await syncIfLive()
     }
-    private func syncIfLive() async { if AppConfig.isLiveSync { await services.syncOnce() } }
+    private func syncIfLive() async { await services.syncOnce() }
 }
 
 /// Notes within a folder (or all unfiled/everything when `folder == nil`). Pinned notes float to the top.
@@ -179,7 +179,7 @@ struct NoteListView: View {
     }
     private func delete(_ note: NoteModel) async { await noteMutation.delete(note); await syncIfLive() }
     private func togglePin(_ note: NoteModel) async { await noteMutation.setPinned(note, !note.pinned); await syncIfLive() }
-    private func syncIfLive() async { if AppConfig.isLiveSync { await services.syncOnce() } }
+    private func syncIfLive() async { await services.syncOnce() }
 }
 
 /// Edit a folder's name, color and icon (journey G10-S04). Wires the existing rename/setAppearance

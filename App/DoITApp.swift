@@ -146,7 +146,7 @@ struct RootTabView: View {
             // Live-sync (`-liveSync`): initial flush + pull when the shell appears, so the app shows
             // what's already on the server. TODO(Phase 1): trigger on foreground + after each mutation
             // for all signed-in sessions (not just the dev demo mode).
-            if AppConfig.isLiveSync { await services.syncOnce() }
+            await services.syncOnce()
             await services.publishAgenda() // refresh the agenda widget snapshot (P1-J)
             // Guided first capture: onboarding's "Create your first task" queues this so the shell
             // opens Quick Add once, right after onboarding completes.
@@ -162,7 +162,7 @@ struct RootTabView: View {
             await services.entitlements.refresh()
             // Open the realtime socket (P5-5): a collaborator's `sync.bump` triggers an immediate pull.
             // Self-guards demo launches; a dropped socket falls back to the foreground/interval pull.
-            if AppConfig.isLiveSync { await services.connectRealtime() }
+            if services.cloudSyncEnabled { await services.connectRealtime() }
             // Mirror scheduled blocks to Apple Calendar when the user enabled it in Settings (P3-7).
             if UserDefaults.standard.bool(forKey: "calendarWriteBackEnabled") && !AppConfig.isRunningDemo {
                 _ = await services.exportToCalendar()
@@ -231,7 +231,14 @@ struct RootTabView: View {
         // control raises a flag, and Live-Activity pause/stop write a focus command. We pick them up on
         // foreground. (No-op until the App Group entitlement exists — see Widget/README.)
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { processWidgetControls() }
+            if phase == .active {
+                processWidgetControls()
+                // Pull fresh server state + flush anything queued while backgrounded (P1: sync on foreground).
+                Task {
+                    await services.syncOnce()
+                    await services.publishAgenda()
+                }
+            }
         }
         .sheet(isPresented: $showQuickAdd) {
             QuickAddView()
@@ -291,7 +298,7 @@ struct RootTabView: View {
                 await mutation.toggleComplete(task)
             }
         }
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
     }
 
     /// Apply a Live-Activity focus command ("toggle:<taskId>" / "stop:<taskId>") to the live session.
@@ -310,7 +317,7 @@ struct RootTabView: View {
                 await TaskMutation(context: modelContext, engine: services.syncEngine,
                                    clock: services.clock, idGenerator: services.idGenerator)
                     .addActualMinutes(task, result.minutes)
-                if AppConfig.isLiveSync { await services.syncOnce() }
+                await services.syncOnce()
             }
         default:
             break

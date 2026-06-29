@@ -127,7 +127,7 @@ struct QuickAddView: View {
 
     private func create() async {
         await services.composeQuickAdd(parsed, ownerId: ownerId)
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
         dismiss()
     }
 }

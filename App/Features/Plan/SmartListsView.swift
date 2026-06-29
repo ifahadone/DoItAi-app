@@ -98,5 +98,5 @@ struct SmartListDetailView: View {
     private func dueText(_ task: TaskModel) -> String? {
         task.dueAt.map { $0.formatted(date: .abbreviated, time: .shortened) }
     }
-    private func syncIfLive() async { if AppConfig.isLiveSync { await services.syncOnce() } }
+    private func syncIfLive() async { await services.syncOnce() }
 }

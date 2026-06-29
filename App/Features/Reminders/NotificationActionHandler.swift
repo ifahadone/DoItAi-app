@@ -68,7 +68,7 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
             let mutation = TaskMutation(context: ctx, engine: services.syncEngine,
                                         clock: services.clock, idGenerator: services.idGenerator)
             await mutation.toggleComplete(task)
-            if AppConfig.isLiveSync { await services.syncOnce() } // push the completion promptly
+            await services.syncOnce() // push the completion promptly
         case Self.snoozeActionId:
             let content = UNMutableNotificationContent()
             content.title = title
@@ -93,7 +93,7 @@ final class NotificationActionHandler: NSObject, UNUserNotificationCenterDelegat
             let mutation = TaskMutation(context: ctx, engine: services.syncEngine,
                                         clock: services.clock, idGenerator: services.idGenerator)
             await mutation.reschedule(task, dueAt: at)
-            if AppConfig.isLiveSync { await services.syncOnce() }
+            await services.syncOnce()
         default:
             break // default tap (open app) — no deep-link target yet
         }

@@ -35,8 +35,10 @@ enum AppConfig {
         // `-localApi` to hit a local stub server on :3001 instead (faster iteration).
         return isLocalApi ? URL(string: "http://localhost:3001/api/v1")! : liveRenderBaseURL
         #else
-        // Release: the production domain (set at deploy). Placeholder until then (ApiSpec §3).
-        return URL(string: "https://doit.app/api/v1")!
+        // Release: target the live (HTTPS) backend so signed-in users actually sync. Point at a custom
+        // production domain when one exists by setting the `DOIT_API_BASE_URL` Info.plist key per release
+        // scheme (that override wins above); until then ship against the live Render service (ApiSpec §3).
+        return liveRenderBaseURL
         #endif
     }
 

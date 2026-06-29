@@ -172,5 +172,5 @@ struct NoteEditorView: View {
         await syncIfLive()
     }
 
-    private func syncIfLive() async { if AppConfig.isLiveSync { await services.syncOnce() } }
+    private func syncIfLive() async { await services.syncOnce() }
 }

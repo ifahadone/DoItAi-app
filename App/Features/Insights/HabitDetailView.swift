@@ -91,7 +91,7 @@ struct HabitDetailView: View {
         let mutation = RoutineMutation(context: modelContext, engine: services.syncEngine, apiClient: services.apiClient,
                                        clock: services.clock, idGenerator: services.idGenerator, ownerId: services.currentOwnerId)
         _ = await mutation.logHabitToday(habit)
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
     }
 
     private static func dayKey(_ date: Date) -> String {

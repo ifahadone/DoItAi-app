@@ -267,9 +267,9 @@ struct TaskDetailView: View {
                     Text("Attach a related URL. It opens in Safari and syncs with the task.")
                 }
 
-                // Collaboration thread (P5-5). Server-connected builds only — it's a live thread shared
-                // with the list's members, so it has nothing to show in a pure-local build.
-                if AppConfig.isLiveSync {
+                // Collaboration thread (P5-5). Cloud sessions only — it's a live thread shared with the
+                // list's members, so it has nothing to show in a pure-local/device-only build.
+                if services.cloudSyncEnabled {
                     TaskCommentsSection(taskId: task.id)
                 }
 
@@ -398,7 +398,7 @@ struct TaskDetailView: View {
         do {
             _ = try await services.apiClient.assignTask(taskId: task.id, assigneeUserId: userId)
             task.assigneeUserId = userId
-            if AppConfig.isLiveSync { await services.syncOnce() } // pull authoritative serverVersion
+            await services.syncOnce() // pull authoritative serverVersion
         } catch {
             // Leave the prior assignment on failure; the picker reflects the unchanged model.
         }
@@ -534,7 +534,7 @@ struct TaskDetailView: View {
     }
 
     private func syncIfLive() async {
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
     }
 
     /// One-line plain-English description of a recurrence rule for the Repeat section (G04-S11).

@@ -29,7 +29,7 @@ struct RoutinesView: View {
                 Button {
                     Task {
                         let count = await services.materializeRoutines()
-                        if AppConfig.isLiveSync { await services.syncOnce() }
+                        await services.syncOnce()
                         materializedNote = count > 0 ? "Added \(count) blocks to today" : "Nothing to materialize"
                     }
                 } label: {
@@ -134,7 +134,7 @@ struct RoutinesView: View {
     }
     private func delete(_ routine: RoutineModel) async {
         await mutation.delete(routine)
-        if AppConfig.isLiveSync { await services.syncOnce() }
+        await services.syncOnce()
     }
     private func logHabit(_ habit: RoutineModel) async {
         _ = await mutation.logHabitToday(habit)

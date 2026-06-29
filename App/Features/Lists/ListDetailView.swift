@@ -225,7 +225,7 @@ struct ListDetailView: View {
         await syncIfLive()
     }
 
-    private func syncIfLive() async { if AppConfig.isLiveSync { await services.syncOnce() } }
+    private func syncIfLive() async { await services.syncOnce() }
 }
 
 /// A simple single-choice picker sheet used for bulk "Move to list" (journey G08-S13).

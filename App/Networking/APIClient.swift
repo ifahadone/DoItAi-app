@@ -295,6 +295,13 @@ actor APIClient: SyncTransport {
         return r.task.serverVersion
     }
 
+    /// Revoke this device's refresh token server-side (POST /auth/logout, 204). Idempotent + best-effort.
+    func logout(refreshToken: String) async throws {
+        let _: EmptyResponse = try await send(method: "POST", path: "auth/logout",
+                                              body: RefreshRequest(refreshToken: refreshToken),
+                                              authenticated: false, idempotent: false)
+    }
+
     func wsTicket() async throws -> String {
         struct R: Decodable { let ticket: String }
         let r: R = try await send(method: "POST", path: "ws/ticket", bodyData: nil, authenticated: true, idempotent: false)

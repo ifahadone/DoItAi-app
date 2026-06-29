@@ -196,9 +196,13 @@ final class AuthService: NSObject, TokenProviding {
         currentNonce = nil
     }
 
-    /// Sign out locally and drop tokens. (Server-side `POST /auth/logout` is best-effort in Phase 1.)
+    /// Sign out: best-effort server-side refresh-token revoke, then drop local tokens + state.
     func signOut() {
-        // TODO(Phase 1): call POST /auth/logout to revoke this device's refresh token server-side.
+        // Revoke this device's refresh token server-side before clearing it (idempotent; ignored when
+        // offline / on failure). Captured before removal so the in-flight call still has a valid token.
+        if let refresh = try? keychain.string(for: KeychainStore.Account.refreshToken), let apiClient {
+            Task { try? await apiClient.logout(refreshToken: refresh) }
+        }
         try? keychain.remove(for: KeychainStore.Account.accessToken)
         try? keychain.remove(for: KeychainStore.Account.refreshToken)
         try? keychain.remove(for: KeychainStore.Account.appleUserId)
