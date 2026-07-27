@@ -21,6 +21,8 @@ final class Entitlements {
     private(set) var expiresAt: Date?
     private(set) var products: [Product] = []
     private(set) var purchasing = false
+    /// Surfaced to the paywall when a purchase completes but the server confirmation fails.
+    private(set) var lastError: String?
 
     init(apiClient: APIClient) {
         self.apiClient = apiClient
@@ -44,11 +46,20 @@ final class Entitlements {
     @discardableResult
     func purchase(_ product: Product) async -> Bool {
         purchasing = true
+        lastError = nil
         defer { purchasing = false }
         guard let result = try? await product.purchase() else { return isPro }
         if case let .success(verification) = result {
             // The JWS (server verifies it) lives on the VerificationResult, not the Transaction.
-            _ = try? await apiClient.submitReceipt(verification.jwsRepresentation)
+            do {
+                _ = try await apiClient.submitReceipt(verification.jwsRepresentation)
+            } catch {
+                // A paid purchase that fails to record server-side is a real support issue — surface it.
+                lastError = "Purchase succeeded but couldn't be confirmed. It'll be restored when you're back online."
+                #if DEBUG
+                print("⚠️ Receipt submission failed after purchase: \(error)")
+                #endif
+            }
             if case let .verified(transaction) = verification { await transaction.finish() }
             await refresh()
         }
@@ -58,7 +69,13 @@ final class Entitlements {
     /// Restore: re-submit current entitlements to the server, then refresh.
     func restore() async {
         for await result in Transaction.currentEntitlements {
-            _ = try? await apiClient.submitReceipt(result.jwsRepresentation)
+            do {
+                _ = try await apiClient.submitReceipt(result.jwsRepresentation)
+            } catch {
+                #if DEBUG
+                print("⚠️ Restore: receipt submission failed for one transaction: \(error)")
+                #endif
+            }
         }
         await refresh()
     }

@@ -222,8 +222,25 @@ final class AuthService: NSObject, TokenProviding {
         try await refreshOnMain()
     }
 
+    /// A single in-flight token refresh, so a burst of concurrent 401s coalesces into ONE refresh
+    /// instead of each thrashing the rotating refresh token (which would trip reuse-detection).
+    private var refreshTask: Task<Void, Error>?
+
     @MainActor
     private func refreshOnMain() async throws {
+        // Coalesce onto an in-flight refresh if one is already running (single-flight).
+        if let existing = refreshTask {
+            try await existing.value
+            return
+        }
+        let task = Task<Void, Error> { try await self.performRefresh() }
+        refreshTask = task
+        defer { refreshTask = nil }
+        try await task.value
+    }
+
+    @MainActor
+    private func performRefresh() async throws {
         guard let apiClient else { throw AuthError.notConfigured }
         guard let refreshToken = try keychain.string(for: KeychainStore.Account.refreshToken) else {
             state = .signedOut

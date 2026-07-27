@@ -61,6 +61,10 @@ struct PaywallView: View {
                             }
                         }
                         Button("Restore purchases") { Task { await entitlements.restore() } }
+                        if let error = entitlements.lastError {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
                     } footer: {
                         Text("Subscriptions renew automatically until canceled. Your purchase is validated by the DoIT backend.")
                     }

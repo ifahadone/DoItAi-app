@@ -355,8 +355,8 @@ actor APIClient: SyncTransport {
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
 
         if http.statusCode == 401, authenticated {
-            // TODO(Phase 1): de-dupe concurrent refreshes (single-flight) so a burst of 401s triggers
-            //   exactly one refresh. For Phase 0 we refresh-and-retry once.
+            // Refresh once and retry. Concurrent 401s coalesce into a single refresh inside the token
+            // provider (AuthService single-flight), so a burst doesn't thrash the rotating refresh token.
             try await tokenProvider.refreshTokens()
             let retried = try await makeRequest(
                 method: method, path: path, queryItems: queryItems,
