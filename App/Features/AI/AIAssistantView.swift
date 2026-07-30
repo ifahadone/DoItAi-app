@@ -1,12 +1,14 @@
 import SwiftUI
 import SwiftData
 import SyncCore
+import DesignSystem
 
 /// The AI assistant surface (AppSpec §5.10, DevelopmentPlan P4-8): a streamed morning brief, an
 /// auto-plan proposal you accept/edit, and a structured + streamed weekly review. Everything degrades
 /// gracefully — with AI off or unreachable, the actions no-op and the rest of the app keeps working.
 struct AIAssistantView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
     @Environment(AppServices.self) private var services
 
     /// Non-deleted tasks, for the deterministic weekly-review metrics (journey G12-S10).
@@ -32,62 +34,176 @@ struct AIAssistantView: View {
     @State private var workStart = 9
     @State private var workEnd = 18
     @State private var showPrefs = false
+    @State private var activeTool: Tool = .plan
+
+    private enum Tool: String, CaseIterable, Identifiable {
+        case brief = "Brief"
+        case plan = "Plan"
+        case review = "Review"
+        var id: String { rawValue }
+        var subtitle: String {
+            switch self {
+            case .brief: return "Orient your day"
+            case .plan: return "Fit work into time"
+            case .review: return "Learn from your week"
+            }
+        }
+    }
 
     var body: some View {
         NavigationStack {
-            Form {
-                if !services.aiConsentEnabled {
-                    Section {
-                        Label("Turn on the AI assistant in Settings to use briefs, auto-plan, and reviews.",
-                              systemImage: "sparkles")
-                            .foregroundStyle(.secondary)
-                    } footer: {
-                        // Be explicit about what leaves the device (journey G12-S08, US-ONB-040).
-                        Text("With AI on, DoIT sends only task titles, dates/times, list/tag names, and completion status to the model to generate briefs, plans and reviews. Your notes, locations, and calendar event details are never sent. With AI off, capture and planning still work using on-device parsing.")
+            ScrollView {
+                VStack(alignment: .leading, spacing: theme.spacing.xl) {
+                    assistantHeader
+                        .doitEntrance(order: 0)
+
+                    if !services.aiConsentEnabled {
+                        consentCallout
+                            .doitEntrance(order: 1)
+                    } else {
+                        Picker("Assistant tool", selection: $activeTool) {
+                            ForEach(Tool.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .doitEntrance(order: 1)
+
+                        Group {
+                            switch activeTool {
+                            case .brief: briefSection
+                            case .plan: autoPlanSection
+                            case .review: reviewSection
+                            }
+                        }
+                        .id(activeTool)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .doitEntrance(order: 2, trigger: activeTool.rawValue)
                     }
-                } else {
-                    briefSection
-                    autoPlanSection
-                    reviewSection
                 }
+                .padding(.horizontal, theme.spacing.xl)
+                .padding(.top, theme.spacing.md)
+                .padding(.bottom, theme.spacing.xxl)
             }
             .navigationTitle("Assistant")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .animation(.spring(response: 0.38, dampingFraction: 0.88), value: activeTool)
         }
     }
 
+    private var assistantHeader: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.xs) {
+            Image(systemName: "sparkles")
+                .font(.title2)
+                .foregroundStyle(theme.colors.accent)
+            Text("What would help?")
+                .font(.title2.bold())
+            Text(services.aiConsentEnabled ? activeTool.subtitle : "AI is optional and every change is previewed.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .contentTransition(.opacity)
+        }
+    }
+
+    private var consentCallout: some View {
+        VStack(alignment: .leading, spacing: theme.spacing.lg) {
+            VStack(alignment: .leading, spacing: theme.spacing.sm) {
+                Label("AI assistance is off", systemImage: "lock.shield")
+                    .font(.headline)
+                Text("DoIT sends task titles, dates, list names and completion status only. Notes, locations and calendar details stay private.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Button {
+                Task { await services.setAiConsent(true) }
+            } label: {
+                Label("Enable AI assistance", systemImage: "sparkles")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            Text("Capture and planning still work on-device when AI is off.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(theme.spacing.lg)
+        .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.large))
+    }
+
     private var briefSection: some View {
-        Section("Morning Brief") {
+        VStack(alignment: .leading, spacing: theme.spacing.lg) {
+            DoITSectionHeading("Today’s brief", subtitle: "Due work, conflicts and one suggested focus.")
             if briefText.isEmpty && !briefing {
-                Button { streamBrief() } label: { Label("Generate today's brief", systemImage: "sun.max") }
+                Button { streamBrief() } label: {
+                    Label("Generate brief", systemImage: "sun.max")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
             } else {
-                Text(briefText.isEmpty ? "…" : briefText)
-                    .font(.callout)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if briefing { ProgressView().controlSize(.small) }
+                VStack(alignment: .leading, spacing: theme.spacing.md) {
+                    Text(briefText.isEmpty ? "Building your brief…" : briefText)
+                        .font(.body)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack {
+                        if briefing { ProgressView().controlSize(.small) }
+                        Spacer()
+                        if !briefing {
+                            Button("Refresh") { streamBrief() }
+                                .font(.subheadline.weight(.semibold))
+                        }
+                    }
+                }
+                .padding(theme.spacing.lg)
+                .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.large))
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
         }
     }
 
     private var autoPlanSection: some View {
-        Section {
+        VStack(alignment: .leading, spacing: theme.spacing.lg) {
+            DoITSectionHeading("Auto-plan", subtitle: "Rank open tasks, then place them with deterministic rules.")
+
             TextField("Intent — e.g. mornings for deep work", text: $intent)
+                .padding(theme.spacing.md)
+                .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.medium))
+                .overlay {
+                    RoundedRectangle(cornerRadius: theme.radii.medium)
+                        .strokeBorder(theme.colors.separator.opacity(0.5))
+                }
+
             DisclosureGroup("Preferences & constraints", isExpanded: $showPrefs) {
-                Stepper("Day starts \(hourLabel(workStart))", value: $workStart, in: 0...22)
-                Stepper("Day ends \(hourLabel(workEnd))", value: $workEnd, in: 1...24)
-                Stepper("Buffer between blocks: \(bufferMinutes)m", value: $bufferMinutes, in: 0...60, step: 5)
+                VStack(spacing: theme.spacing.md) {
+                    Stepper("Day starts \(hourLabel(workStart))", value: $workStart, in: 0...22)
+                    Stepper("Day ends \(hourLabel(workEnd))", value: $workEnd, in: 1...24)
+                    Stepper("Buffer: \(bufferMinutes)m", value: $bufferMinutes, in: 0...60, step: 5)
+                }
+                .padding(.top, theme.spacing.md)
             }
+            .padding(theme.spacing.md)
+            .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.medium))
+
             Button { propose() } label: {
                 HStack {
                     Label(proposal == nil ? "Propose a plan" : "Regenerate", systemImage: "wand.and.stars")
-                    Spacer()
+                        Spacer()
                     if planning { ProgressView().controlSize(.small) }
                 }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
             }
+            .buttonStyle(.borderedProminent)
             .disabled(planning)
 
             if let proposal {
+                Divider()
+                DoITSectionHeading(
+                    "Review the proposal",
+                    subtitle: "\(proposal.blocks.count) placed · \(proposal.unscheduled.count) need attention"
+                )
                 // Review before any write (US-PLAN-030): each placement can be kept or dropped; only
                 // kept blocks are committed on Apply. Tap a row to toggle it.
                 ForEach(proposal.blocks) { block in
@@ -103,6 +219,7 @@ struct AIAssistantView: View {
                             }
                             Spacer(minLength: 0)
                         }
+                        .padding(.vertical, theme.spacing.xs)
                     }
                     .buttonStyle(.plain)
                     .disabled(applied)
@@ -135,25 +252,37 @@ struct AIAssistantView: View {
                     } label: {
                         Label(kept.isEmpty ? "Select at least one block" : "Apply \(kept.count) block\(kept.count == 1 ? "" : "s")",
                               systemImage: "checkmark.circle")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
                     }
+                    .buttonStyle(.borderedProminent)
                     .disabled(kept.isEmpty)
                     Button(role: .destructive) { discardProposal() } label: {
                         Label("Discard proposal", systemImage: "xmark.circle")
                     }
                 } else {
                     // Plan accepted (G05-S15): confirm + offer to view it on Today, or undo the changes.
-                    Label("Plan applied to your day", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                    Button { dismiss() } label: { Label("View on Today", systemImage: "calendar.day.timeline.left") }
+                    Label("Plan applied to your day", systemImage: "checkmark.circle.fill")
+                        .font(.headline)
+                        .foregroundStyle(.green)
+                        .symbolEffect(.bounce, value: applied)
+                    Button { dismiss() } label: {
+                        Label("View on Today", systemImage: "calendar.day.timeline.left")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
                     Button(role: .destructive) {
                         Task { await services.undoPlan(planUndo); planUndo = []; applied = false }
                     } label: { Label("Undo plan", systemImage: "arrow.uturn.backward") }
                 }
             }
-        } header: {
-            Text("Auto-plan")
-        } footer: {
             Text("AI ranks your open tasks by your intent; a deterministic solver places them into free slots. Nothing changes until you Apply.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.88), value: proposal?.blocks.count)
+        .animation(.spring(response: 0.4, dampingFraction: 0.88), value: applied)
     }
 
     private func propose() {
@@ -176,7 +305,8 @@ struct AIAssistantView: View {
     }
 
     private var reviewSection: some View {
-        Section {
+        VStack(alignment: .leading, spacing: theme.spacing.lg) {
+            DoITSectionHeading("Weekly review", subtitle: "Metrics stay on-device; AI adds the narrative.")
             // Deterministic at-a-glance metrics (journey G12-S10) — always shown, no AI required, so the
             // numbers are trustworthy; the AI narrative below adds qualitative interpretation.
             let m = weeklyMetrics
@@ -190,19 +320,28 @@ struct AIAssistantView: View {
                 reviewMetric("\(m.overdue)", "Overdue")
             }
             .frame(maxWidth: .infinity)
+            .padding(.vertical, theme.spacing.lg)
+            .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.large))
 
             if reviewText.isEmpty && !reviewing {
-                Button { streamReview() } label: { Label("Generate AI narrative", systemImage: "sparkles") }
+                Button { streamReview() } label: {
+                    Label("Generate review", systemImage: "sparkles")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
             } else {
                 Text(reviewText.isEmpty ? "…" : reviewText)
-                    .font(.callout)
+                    .font(.body)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(theme.spacing.lg)
+                    .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.large))
                 if reviewing { ProgressView().controlSize(.small) }
             }
-        } header: {
-            Text("Weekly Review")
-        } footer: {
             Text("Last 7 days. Metrics are computed on-device; the narrative is AI-generated.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

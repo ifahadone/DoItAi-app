@@ -10,6 +10,7 @@ import DesignSystem
 /// export after each sync (see `DoITApp`).
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
     @Environment(AppServices.self) private var services
 
     /// Persisted preference; read on launch to decide whether to export after sync.
@@ -34,6 +35,21 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    HStack(spacing: 0) {
+                        settingsStatus(aiConsent ? "On" : "Off", "AI", aiConsent ? "sparkles" : "sparkles")
+                        Divider().frame(height: 38)
+                        settingsStatus(notificationStatusLabel, "Reminders",
+                                       notifStatus == .authorized ? "bell.fill" : "bell.slash")
+                        Divider().frame(height: 38)
+                        settingsStatus(services.auth.isLocalMode ? "Local" : "Cloud", "Data",
+                                       services.auth.isLocalMode ? "iphone" : "icloud.fill")
+                    }
+                    .padding(.vertical, theme.spacing.sm)
+                } footer: {
+                    Text("Your current setup at a glance.")
+                }
+
                 Section {
                     Button { showPaywall = true } label: {
                         HStack {
@@ -194,6 +210,10 @@ struct SettingsView: View {
                          : "Export downloads all your data as JSON. Deleting your account permanently erases everything on the server and cannot be undone.")
                 }
             }
+            .doitEntrance()
+            .animation(.spring(response: 0.35, dampingFraction: 0.9), value: aiConsent)
+            .animation(.spring(response: 0.35, dampingFraction: 0.9), value: calendarWriteBack)
+            .animation(.spring(response: 0.35, dampingFraction: 0.9), value: quietHoursEnabled)
             .sheet(isPresented: $showPaywall) {
                 PaywallView().environment(services)
             }
@@ -210,6 +230,28 @@ struct SettingsView: View {
             }
             .task { await refreshNotifStatus() }
         }
+    }
+
+    private var notificationStatusLabel: String {
+        switch notifStatus {
+        case .authorized, .provisional, .ephemeral: return "On"
+        case .denied: return "Off"
+        case .notDetermined: return "Not set"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    private func settingsStatus(_ value: String, _ label: String, _ icon: String) -> some View {
+        VStack(spacing: 3) {
+            Label(value, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(theme.colors.accent)
+                .contentTransition(.opacity)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func refreshNotifStatus() async {

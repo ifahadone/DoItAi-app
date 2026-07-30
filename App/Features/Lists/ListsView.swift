@@ -27,6 +27,26 @@ struct ListsView: View {
         NavigationStack {
             List {
                 Section {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\(openTaskCount) open")
+                                .font(.title2.bold())
+                                .contentTransition(.numericText())
+                            Text("Across \(lists.count) list\(lists.count == 1 ? "" : "s")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if sharedListCount > 0 {
+                            Label("\(sharedListCount) shared", systemImage: "person.2.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(theme.colors.accent)
+                        }
+                    }
+                    .padding(.vertical, theme.spacing.xs)
+                }
+
+                Section("Explore") {
                     NavigationLink {
                         SearchView()
                     } label: {
@@ -46,7 +66,13 @@ struct ListsView: View {
 
                 Section("Lists") {
                     if lists.isEmpty {
-                        Text("No lists yet — tap + to create one.").font(.subheadline).foregroundStyle(.secondary)
+                        ContentUnavailableView {
+                            Label("No lists yet", systemImage: "tray")
+                        } description: {
+                            Text("Create a list when a task needs a home.")
+                        } actions: {
+                            Button("Create list") { newName = ""; creatingList = true }
+                        }
                     }
                     ForEach(lists) { list in
                         NavigationLink {
@@ -67,7 +93,9 @@ struct ListsView: View {
 
                 Section("Tags") {
                     if tags.isEmpty {
-                        Text("No tags yet — tap + to create one.").font(.subheadline).foregroundStyle(.secondary)
+                        Text("Tags appear here when you need another way to group work.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                     ForEach(tags) { tag in
                         TagPill(name: tag.name, colorHex: tag.colorHex)
@@ -79,6 +107,9 @@ struct ListsView: View {
                     }
                 }
             }
+            .doitEntrance()
+            .animation(.spring(response: 0.38, dampingFraction: 0.88), value: lists.map(\.id))
+            .animation(.spring(response: 0.38, dampingFraction: 0.88), value: tags.map(\.id))
             .navigationTitle("Lists")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -108,6 +139,14 @@ struct ListsView: View {
 
     private func taskCount(for list: TaskListModel) -> Int {
         tasks.filter { $0.listId == list.id }.count
+    }
+
+    private var openTaskCount: Int {
+        tasks.filter { $0.status != .done }.count
+    }
+
+    private var sharedListCount: Int {
+        lists.filter { $0.shareId != nil }.count
     }
 
     private var ownerId: String {

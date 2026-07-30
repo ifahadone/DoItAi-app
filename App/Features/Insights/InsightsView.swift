@@ -20,6 +20,7 @@ struct InsightsView: View {
 
     @State private var range: AnalyticsRange = .week
     @State private var showAssistant = false
+    @State private var showDetails = false
 
     enum AnalyticsRange: String, CaseIterable, Identifiable {
         case week = "Week", month = "Month"
@@ -32,18 +33,46 @@ struct InsightsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: theme.spacing.lg) {
                     summary
+                        .doitEntrance(order: 0)
                     reviewCard
-                    analytics
-                    if habits.isEmpty {
-                        EmptyStateView(title: "No habits yet", systemImage: "flame",
-                                       message: "Track a habit in Lists → Routines & Habits to build a streak.")
-                            .frame(minHeight: 180)
-                    } else {
-                        Text("Habits").font(.headline)
-                        ForEach(habits) { habitCard($0) }
+                        .doitEntrance(order: 1)
+                    glanceInsight
+                        .doitEntrance(order: 2)
+
+                    Button {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.88)) {
+                            showDetails.toggle()
+                        }
+                    } label: {
+                        HStack {
+                            Label(showDetails ? "Hide details" : "Explore trends",
+                                  systemImage: showDetails ? "chevron.up" : "chart.xyaxis.line")
+                            Spacer()
+                            Image(systemName: showDetails ? "chevron.up" : "chevron.down")
+                                .font(.caption)
+                        }
+                        .font(.headline)
+                        .padding(.vertical, theme.spacing.sm)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.colors.accent)
+
+                    if showDetails {
+                        VStack(alignment: .leading, spacing: theme.spacing.lg) {
+                            analytics
+                            if habits.isEmpty {
+                                EmptyStateView(title: "No habits yet", systemImage: "flame",
+                                               message: "Track a habit in Lists → Routines & Habits to build a streak.")
+                                    .frame(minHeight: 180)
+                            } else {
+                                DoITSectionHeading("Habits", subtitle: "Current streaks and the last 70 days.")
+                                ForEach(habits) { habitCard($0) }
+                            }
+                        }
+                        .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
-                .padding()
+                .padding(theme.spacing.xl)
             }
             .navigationTitle("Insights")
             .toolbar {
@@ -83,11 +112,63 @@ struct InsightsView: View {
             $0.status == .done && ($0.completedAt.map { calendar.isDate($0, inSameDayAs: now) } ?? false)
         }.count
         let focusMinutes = tasks.reduce(0) { $0 + ($1.actualMinutes ?? 0) }
-        return HStack(spacing: theme.spacing.md) {
-            statCard(value: "\(doneToday)", label: "Done today", systemImage: "checkmark.circle.fill")
-            statCard(value: "\(focusMinutes)m", label: "Focused", systemImage: "timer")
-            statCard(value: "\(habits.count)", label: "Habits", systemImage: "flame.fill")
+        return VStack(alignment: .leading, spacing: theme.spacing.md) {
+            Text("At a glance")
+                .font(.title2.bold())
+            HStack(spacing: 0) {
+                summaryMetric(value: "\(doneToday)", label: "Done", icon: "checkmark.circle.fill")
+                Divider().frame(height: 42)
+                summaryMetric(value: "\(focusMinutes)m", label: "Focused", icon: "timer")
+                Divider().frame(height: 42)
+                summaryMetric(value: "\(habits.count)", label: "Habits", icon: "flame.fill")
+            }
+            .padding(.vertical, theme.spacing.sm)
         }
+    }
+
+    private var glanceInsight: some View {
+        let stats = taskStats
+        let now = services.clock.now()
+        let weekStart = Calendar.current.date(byAdding: .day, value: -7, to: now) ?? now
+        let completion = Analytics.completion(stats, in: DateInterval(start: weekStart, end: now), now: now)
+        let rate = completion.completionRatePct.map { "\($0)%" } ?? "—"
+        return VStack(alignment: .leading, spacing: theme.spacing.sm) {
+            Text("Last 7 days")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline) {
+                Text(rate)
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .contentTransition(.numericText())
+                Text("completion")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if completion.overdue > 0 {
+                    Label("\(completion.overdue) overdue", systemImage: "exclamationmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                }
+            }
+            Text("\(completion.completed) completed from \(completion.created) created.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(theme.spacing.lg)
+        .background(theme.colors.surface, in: RoundedRectangle(cornerRadius: theme.radii.large))
+    }
+
+    private func summaryMetric(value: String, label: String, icon: String) -> some View {
+        VStack(spacing: 3) {
+            Label(value, systemImage: icon)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(theme.colors.accent)
+                .contentTransition(.numericText())
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Analytics (P6-3, AppSpec §5.9)

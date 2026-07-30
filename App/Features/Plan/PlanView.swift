@@ -1,4 +1,5 @@
 import SwiftUI
+import DesignSystem
 
 /// The Plan tab: a segmented switch between the **Planner** (the day-grid, P2-3) and the **Lists**
 /// (smart lists, P1-G). Owns the single `NavigationStack` both children push into.
@@ -8,8 +9,8 @@ struct PlanView: View {
     @State private var showAssistant = false
 
     enum Mode: String, CaseIterable, Identifiable {
-        case planner = "Planner"
-        case lists = "Lists"
+        case planner = "Timeline"
+        case lists = "Tasks"
         var id: String { rawValue }
     }
 
@@ -19,8 +20,11 @@ struct PlanView: View {
                 switch mode {
                 case .planner: CalendarView()
                 case .lists: SmartListsView()
+                }
             }
-        }
+            .id(mode)
+            .transition(.opacity.combined(with: .move(edge: mode == .planner ? .leading : .trailing)))
+            .doitEntrance(trigger: mode.rawValue)
             .navigationTitle("Plan")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -29,7 +33,7 @@ struct PlanView: View {
                         ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 240)
+                    .frame(maxWidth: 220)
                 }
                 // Auto-plan lives where you plan: the AI assistant's schedule proposal is one tap away
                 // from the Planner (it previews placed blocks + conflicts before you accept).
@@ -43,6 +47,7 @@ struct PlanView: View {
             .sheet(isPresented: $showAssistant) {
                 AIAssistantView().environment(services)
             }
+            .animation(.spring(response: 0.38, dampingFraction: 0.9), value: mode)
         }
     }
 }

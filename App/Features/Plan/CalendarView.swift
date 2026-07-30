@@ -61,12 +61,17 @@ struct CalendarView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            switch scale {
-            case .day: dayView
-            case .week: weekView
-            case .month: monthView
+            Group {
+                switch scale {
+                case .day: dayView
+                case .week: weekView
+                case .month: monthView
+                }
             }
+            .id(scale)
+            .transition(.opacity.combined(with: .scale(scale: 0.985)))
         }
+        .animation(.spring(response: 0.38, dampingFraction: 0.92), value: scale)
         .sheet(item: $selectedTask) { task in
             TaskDetailView(task: task).environment(auth).environment(services)
         }
@@ -96,7 +101,9 @@ struct CalendarView: View {
     private var header: some View {
         VStack(spacing: 8) {
             HStack {
-                Text(title).font(.title3.weight(.semibold))
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .contentTransition(.numericText())
                 Spacer()
                 Button { step(-1) } label: { Image(systemName: "chevron.left") }
                 Button("Today") { if !isPaging { withAnimation { selectedDate = today } } }
@@ -109,6 +116,7 @@ struct CalendarView: View {
             .pickerStyle(.segmented)
         }
         .padding(.horizontal).padding(.top, 6).padding(.bottom, 8)
+        .doitEntrance(trigger: scale.rawValue)
     }
 
     private var title: String {

@@ -70,13 +70,17 @@ struct QuickAddView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+                .doitEntrance(order: 0)
 
                 captureField
+                    .doitEntrance(order: 1)
 
                 if parsed.title.isEmpty {
                     examplePrompts
+                        .doitEntrance(order: 2)
                 } else {
                     interpretedSummary
+                        .doitEntrance(order: 2, trigger: parsed.title)
 
                     if showDetails {
                         detailEditor
@@ -84,6 +88,7 @@ struct QuickAddView: View {
                     }
 
                     actionArea
+                        .doitEntrance(order: 3, trigger: parsed.title)
                 }
             }
             .padding(.horizontal, theme.spacing.xl)

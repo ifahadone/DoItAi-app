@@ -15,18 +15,29 @@ struct SmartListsView: View {
 
     var body: some View {
         List {
-            ForEach(SmartList.allCases) { smart in
-                NavigationLink {
-                    SmartListDetailView(smartList: smart)
-                } label: {
-                    HStack {
-                        Label(smart.title, systemImage: smart.systemImage)
-                        Spacer()
-                        Text("\(count(smart))").foregroundStyle(.secondary).monospacedDigit()
+            Section {
+                LabeledContent("Open tasks", value: "\(tasks.count)")
+                    .font(.subheadline.weight(.medium))
+            } footer: {
+                Text("Use Timeline to place work in time, or jump into a view below.")
+            }
+
+            Section("Find tasks by moment") {
+                ForEach(Array(SmartList.allCases.enumerated()), id: \.element.id) { index, smart in
+                    NavigationLink {
+                        SmartListDetailView(smartList: smart)
+                    } label: {
+                        HStack {
+                            Label(smart.title, systemImage: smart.systemImage)
+                            Spacer()
+                            Text("\(count(smart))").foregroundStyle(.secondary).monospacedDigit()
+                        }
                     }
+                    .doitEntrance(order: index)
                 }
             }
         }
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: tasks.map(\.id))
     }
 
     private func count(_ smart: SmartList) -> Int {
@@ -62,9 +73,14 @@ struct SmartListDetailView: View {
     var body: some View {
         List {
             if tasks.isEmpty {
-                Text("Nothing in \(smartList.title).").font(.subheadline).foregroundStyle(.secondary)
+                ContentUnavailableView(
+                    "Nothing here",
+                    systemImage: smartList.systemImage,
+                    description: Text("Tasks will appear here automatically when they match \(smartList.title.lowercased()).")
+                )
+                .listRowBackground(Color.clear)
             }
-            ForEach(tasks) { task in
+            ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
                 TaskRow(
                     title: task.title,
                     isDone: task.status == .done,
@@ -75,6 +91,7 @@ struct SmartListDetailView: View {
                 )
                 .contentShape(Rectangle())
                 .onTapGesture { selectedTask = task }
+                .doitEntrance(order: index)
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) { Task { await delete(task) } } label: {
                         Label("Delete", systemImage: "trash")
@@ -87,6 +104,7 @@ struct SmartListDetailView: View {
         .sheet(item: $selectedTask) { task in
             TaskDetailView(task: task).environment(auth).environment(services)
         }
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: tasks.map(\.id))
     }
 
     private var mutation: TaskMutation {

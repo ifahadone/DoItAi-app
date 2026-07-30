@@ -33,18 +33,42 @@ struct RoutinesView: View {
                         materializedNote = count > 0 ? "Added \(count) blocks to today" : "Nothing to materialize"
                     }
                 } label: {
-                    Label("Materialize today", systemImage: "wand.and.stars")
+                    HStack {
+                        Label("Add today's routines", systemImage: "wand.and.stars")
+                        Spacer()
+                        if materializedNote == nil {
+                            Text("\(templates.filter { !$0.paused && !$0.archived }.count) ready")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 if let note = materializedNote {
-                    Text(note).font(.caption).foregroundStyle(.secondary)
+                    Label(note, systemImage: note.hasPrefix("Added") ? "checkmark.circle.fill" : "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(note.hasPrefix("Added") ? .green : .secondary)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
+            } header: {
+                Text("Today")
+            } footer: {
+                Text("One tap turns each active routine into scheduled steps for today.")
             }
 
             Section("Routines") {
-                if templates.isEmpty { Text("No routines yet.").font(.subheadline).foregroundStyle(.secondary) }
-                ForEach(templates) { routine in
+                if templates.isEmpty {
+                    Button {
+                        editing = nil
+                        creatingHabit = false
+                        showBuilder = true
+                    } label: {
+                        Label("Create your first routine", systemImage: "plus.circle")
+                    }
+                }
+                ForEach(Array(templates.enumerated()), id: \.element.id) { index, routine in
                     Button { editing = routine } label: { routineRow(routine) }
                         .buttonStyle(.plain)
+                        .doitEntrance(order: index)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) { Task { await delete(routine) } } label: { Label("Delete", systemImage: "trash") }
                             Button { Task { await mutation.duplicate(routine) } } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
@@ -62,9 +86,18 @@ struct RoutinesView: View {
             }
 
             Section("Habits") {
-                if habits.isEmpty { Text("No habits yet.").font(.subheadline).foregroundStyle(.secondary) }
-                ForEach(habits) { habit in
+                if habits.isEmpty {
+                    Button {
+                        editing = nil
+                        creatingHabit = true
+                        showBuilder = true
+                    } label: {
+                        Label("Track a new habit", systemImage: "plus.circle")
+                    }
+                }
+                ForEach(Array(habits.enumerated()), id: \.element.id) { index, habit in
                     habitRow(habit)
+                        .doitEntrance(order: index)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) { Task { await delete(habit) } } label: { Label("Delete", systemImage: "trash") }
                         }
@@ -86,6 +119,8 @@ struct RoutinesView: View {
         .sheet(item: $editing) { routine in
             RoutineBuilderView(routine: routine, isHabit: routine.isHabit).environment(auth).environment(services)
         }
+        .animation(.spring(response: 0.36, dampingFraction: 0.9), value: materializedNote)
+        .animation(.spring(response: 0.36, dampingFraction: 0.9), value: routines.map(\.id))
     }
 
     private func routineRow(_ routine: RoutineModel) -> some View {

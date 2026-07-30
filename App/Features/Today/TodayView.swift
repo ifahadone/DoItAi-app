@@ -73,6 +73,7 @@ struct TodayView: View {
                 } else {
                     VStack(spacing: 0) {
                         glanceSummary
+                            .doitEntrance(order: 0)
                         let dialItems = sectographItems
                         let busy = busyItems
                         GeometryReader { geo in
@@ -94,14 +95,21 @@ struct TodayView: View {
                         .frame(height: showsFullDay ? 240 : 212)
                         .padding(.top, theme.spacing.sm)
                         .padding(.bottom, theme.spacing.sm)
+                        .doitEntrance(order: 1)
                         nextUpCard
+                            .doitEntrance(order: 2)
                         if showsFullDay {
-                            morningBriefCard
-                            habitProgressCard
-                            dayHealthBanner
+                            Group {
+                                morningBriefCard
+                                habitProgressCard
+                                dayHealthBanner
+                            }
+                            .transition(.move(edge: .top).combined(with: .opacity))
                         }
                         taskList
+                            .doitEntrance(order: 3)
                     }
+                    .animation(.spring(response: 0.4, dampingFraction: 0.88), value: showsFullDay)
                 }
             }
             .navigationTitle("Today")

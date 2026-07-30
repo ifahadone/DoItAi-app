@@ -9,6 +9,7 @@ import DesignSystem
 struct TaskDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.theme) private var theme
     @Environment(AppServices.self) private var services
 
     @Bindable var task: TaskModel
@@ -69,6 +70,34 @@ struct TaskDetailView: View {
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                     }
+                }
+
+                Section {
+                    VStack(alignment: .leading, spacing: theme.spacing.md) {
+                        HStack(spacing: theme.spacing.lg) {
+                            detailMetric(
+                                task.status == .done ? "Done" : "Open",
+                                label: "Status",
+                                icon: task.status == .done ? "checkmark.circle.fill" : "circle"
+                            )
+                            detailMetric(prioritySummary, label: "Priority", icon: "flag.fill")
+                            detailMetric(durationSummary, label: "Estimate", icon: "clock")
+                        }
+
+                        Button {
+                            services.focus.start(taskId: task.id, title: task.title)
+                            showingFocus = true
+                        } label: {
+                            Label("Start a focus session", systemImage: "timer")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(task.status == .done)
+                    }
+                    .padding(.vertical, 4)
+                    .doitEntrance()
+                } header: {
+                    Text("At a glance")
                 }
 
                 Section {
@@ -275,15 +304,6 @@ struct TaskDetailView: View {
 
                 Section {
                     Button {
-                        services.focus.start(taskId: task.id, title: task.title)
-                        showingFocus = true
-                    } label: {
-                        Label("Start Focus", systemImage: "timer")
-                    }
-                }
-
-                Section {
-                    Button {
                         showArchiveConfirm = true
                     } label: {
                         Label("Archive Task", systemImage: "archivebox")
@@ -364,7 +384,31 @@ struct TaskDetailView: View {
                 loadChecklist()
             }
             .task { await loadMembersIfShared() }
+            .animation(.spring(response: 0.35, dampingFraction: 0.9), value: task.statusRaw)
         }
+    }
+
+    private var prioritySummary: String {
+        task.priority == .none ? "None" : "P\(task.priority.rawValue)"
+    }
+
+    private var durationSummary: String {
+        guard let minutes = task.estimatedMinutes else { return "None" }
+        return minutes >= 60 && minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes)m"
+    }
+
+    private func detailMetric(_ value: String, label: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Image(systemName: icon)
+                .foregroundStyle(theme.colors.accent)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .contentTransition(.numericText())
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Reload the editable drafts from the (server-authoritative) model — used on appear and when the

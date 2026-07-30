@@ -38,7 +38,14 @@ struct FocusTimerView: View {
                 Color.black.ignoresSafeArea()
                 content
             }
-            .overlay { if let summary { completionOverlay(summary) } }
+            .overlay {
+                if let summary {
+                    completionOverlay(summary)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
+            }
+            .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.88),
+                       value: summary != nil)
             .navigationTitle("Focus")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -98,6 +105,7 @@ struct FocusTimerView: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .padding(.horizontal, 32)
+                    .doitEntrance(order: 0, trigger: session.taskId)
 
                 TimelineView(.periodic(from: .now, by: 1)) { tick in
                     let elapsed = session.elapsedSeconds(at: tick.date.timeIntervalSince1970)
@@ -120,9 +128,11 @@ struct FocusTimerView: View {
                     )
                     .padding(.horizontal, 16)
                     .contentTransition(reduceMotion ? .identity : .numericText())
+                    .doitEntrance(order: 1, trigger: session.taskId)
                 }
 
                 controls(session)
+                    .doitEntrance(order: 2, trigger: session.taskId)
             }
             .padding(.vertical, 24)
         } else {
@@ -148,6 +158,7 @@ struct FocusTimerView: View {
                         .font(.subheadline.weight(.medium))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 4)
+                        .contentTransition(.numericText())
                 }
                 .buttonStyle(.bordered)
                 .tint(.white)
@@ -172,6 +183,7 @@ struct FocusTimerView: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
+                        .contentTransition(.symbolEffect(.replace))
                 }
                 .buttonStyle(.bordered)
                 .tint(.white)
@@ -241,6 +253,7 @@ struct FocusTimerView: View {
             VStack(spacing: 22) {
                 Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 44)).foregroundStyle(doneAccent)
+                    .symbolEffect(.bounce, value: summary != nil)
                 VStack(spacing: 4) {
                     Text("Session complete").font(.title3.weight(.semibold)).foregroundStyle(.white)
                     Text(s.title).font(.subheadline).foregroundStyle(.white.opacity(0.7))
