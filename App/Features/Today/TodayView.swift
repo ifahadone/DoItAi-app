@@ -40,8 +40,6 @@ struct TodayView: View {
     @AppStorage("dialStyle") private var dialStyleRaw = DialStyle.watchFace.rawValue
     private var dialStyle: DialStyle { DialStyle(rawValue: dialStyleRaw) ?? .watchFace }
 
-    @State private var isCreating = false
-    @State private var newTitle = ""
     /// The task whose detail sheet is open (P1-E).
     @State private var selectedTask: TaskModel?
     @State private var showSettings = false
@@ -64,6 +62,8 @@ struct TodayView: View {
     @State private var dismissedDayHealth = false
     /// Presents the full-screen focus timer when started from the now/next card (journey G02-S05).
     @State private var showFocus = false
+    /// Progressive disclosure for Today: glance mode is the default; the user's preference persists.
+    @AppStorage("todayShowsFullDay") private var showsFullDay = false
 
     var body: some View {
         NavigationStack {
@@ -72,6 +72,7 @@ struct TodayView: View {
                     emptyState
                 } else {
                     VStack(spacing: 0) {
+                        glanceSummary
                         let dialItems = sectographItems
                         let busy = busyItems
                         GeometryReader { geo in
@@ -90,13 +91,15 @@ struct TodayView: View {
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
-                        .frame(height: 240)
+                        .frame(height: showsFullDay ? 240 : 212)
                         .padding(.top, theme.spacing.sm)
                         .padding(.bottom, theme.spacing.sm)
                         nextUpCard
-                        morningBriefCard
-                        habitProgressCard
-                        dayHealthBanner
+                        if showsFullDay {
+                            morningBriefCard
+                            habitProgressCard
+                            dayHealthBanner
+                        }
                         taskList
                     }
                 }
@@ -128,21 +131,11 @@ struct TodayView: View {
                         .accessibilityLabel("AI assistant")
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        newTitle = ""
-                        isCreating = true
-                    } label: {
+                    Button { showQuickAdd = true } label: {
                         Image(systemName: "plus")
                     }
-                    .accessibilityLabel("Add task")
+                    .accessibilityLabel("Quick add")
                 }
-            }
-            .alert("New Task", isPresented: $isCreating) {
-                TextField("Title", text: $newTitle)
-                Button("Add") { Task { await addTask() } }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Create a task. It's saved offline and synced when you're online.")
             }
             .sheet(item: $selectedTask) { task in
                 TaskDetailView(task: task)
@@ -186,6 +179,55 @@ struct TodayView: View {
     private var visibleTasks: [TaskModel] {
         guard !searchText.isEmpty || aiFilter != nil else { return tasks }
         return tasks.filter(matchesSearch)
+    }
+
+    /// The first line answers the only glance-mode questions: how much is left, how much is planned,
+    /// and whether the user is viewing the short or detailed version of the day.
+    private var glanceSummary: some View {
+        let now = services.clock.now()
+        let open = tasks.filter { $0.status != .done }.count
+        let completed = tasks.filter { $0.status == .done }.count
+        let planned = tasks.filter {
+            guard let start = $0.scheduledStart else { return false }
+            return Calendar.current.isDate(start, inSameDayAs: now) && $0.status != .done
+        }.count
+
+        return HStack(spacing: theme.spacing.md) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(open == 0 ? "All clear" : "\(open) left today")
+                    .font(.title3.weight(.bold))
+            }
+
+            Spacer()
+
+            if planned > 0 {
+                Label("\(planned) planned", systemImage: "calendar")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            } else if completed > 0 {
+                Label("\(completed) done", systemImage: "checkmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                withAnimation(.snappy) { showsFullDay.toggle() }
+            } label: {
+                Label(showsFullDay ? "Glance" : "Full day",
+                      systemImage: showsFullDay ? "rectangle.compress.vertical" : "list.bullet")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .accessibilityHint(showsFullDay
+                ? "Shows only the most important items"
+                : "Shows habits, brief, day health, and every task")
+        }
+        .padding(.horizontal, theme.spacing.xl)
+        .padding(.top, theme.spacing.xs)
     }
 
     private func matchesSearch(_ task: TaskModel) -> Bool {
@@ -456,11 +498,43 @@ struct TodayView: View {
         return visibleTasks.filter { !overdueIds.contains($0.id) }
     }
 
+    private var displayedOverdueTasks: [TaskModel] {
+        showsFullDay ? overdueTasks : Array(overdueTasks.prefix(1))
+    }
+
+    private var displayedMainTasks: [TaskModel] {
+        if showsFullDay { return mainTasks }
+        return Array(
+            mainTasks
+                .filter { $0.status != .done }
+                .sorted { lhs, rhs in
+                    switch (lhs.scheduledStart ?? lhs.dueAt, rhs.scheduledStart ?? rhs.dueAt) {
+                    case let (l?, r?) where l != r: return l < r
+                    case (_?, nil): return true
+                    case (nil, _?): return false
+                    default:
+                        if lhs.priority != rhs.priority {
+                            let l = lhs.priority == .none ? Int.max : lhs.priority.rawValue
+                            let r = rhs.priority == .none ? Int.max : rhs.priority.rawValue
+                            return l < r
+                        }
+                        return lhs.createdAt > rhs.createdAt
+                    }
+                }
+                .prefix(4)
+        )
+    }
+
+    private var hasMoreTasks: Bool {
+        displayedOverdueTasks.count + displayedMainTasks.count
+            < overdueTasks.count + mainTasks.count
+    }
+
     private var taskList: some View {
         List {
-            if !overdueTasks.isEmpty {
+            if !displayedOverdueTasks.isEmpty {
                 Section {
-                    ForEach(overdueTasks) { task in taskRow(task) }
+                    ForEach(displayedOverdueTasks) { task in taskRow(task) }
                 } header: {
                     HStack {
                         Label("Overdue · \(overdueTasks.count)", systemImage: "exclamationmark.circle.fill")
@@ -472,9 +546,24 @@ struct TodayView: View {
                 }
             }
             Section {
-                ForEach(mainTasks) { task in taskRow(task) }
+                ForEach(displayedMainTasks) { task in taskRow(task) }
+                if hasMoreTasks && !showsFullDay {
+                    Button {
+                        withAnimation(.snappy) { showsFullDay = true }
+                    } label: {
+                        HStack {
+                            Text("View all \(visibleTasks.count) tasks")
+                            Spacer()
+                            Image(systemName: "chevron.down")
+                        }
+                        .font(.subheadline.weight(.semibold))
+                    }
+                }
+            } header: {
+                Text(showsFullDay ? "All tasks" : "Up next")
             }
         }
+        .listStyle(.plain)
     }
 
     /// One task row with its tap / swipe / context-menu affordances (shared by the overdue + main
@@ -572,28 +661,6 @@ struct TodayView: View {
         } description: {
             Text("Tap + to capture your first task.")
         }
-    }
-
-    private func addTask() async {
-        let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return }
-
-        // Owner id from the signed-in session; fall back to a local placeholder before sign-in so
-        // the skeleton is usable in the simulator without a backend.
-        let ownerId: String
-        if case let .signedIn(userId) = auth.state, let userId { ownerId = userId }
-        else { ownerId = "local-user" }
-
-        let creator = TaskCreation(
-            context: modelContext,
-            engine: services.syncEngine,
-            ownerId: ownerId,
-            clock: services.clock,
-            idGenerator: services.idGenerator
-        )
-        await creator.createTask(title: title)
-        // Flush the new task to the server when live-syncing (DevelopmentPlan P1-D).
-        await services.syncOnce()
     }
 
     /// Resolve a task's parent list (if assigned + already synced locally) for the row chip.
