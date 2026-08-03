@@ -138,12 +138,6 @@ struct TodayView: View {
                     Button { showAssistant = true } label: { Image(systemName: "sparkles") }
                         .accessibilityLabel("AI assistant")
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button { showQuickAdd = true } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("Quick add")
-                }
             }
             .sheet(item: $selectedTask) { task in
                 TaskDetailView(task: task)

@@ -5,6 +5,7 @@ import DesignSystem
 /// (smart lists, P1-G). Owns the single `NavigationStack` both children push into.
 struct PlanView: View {
     @Environment(AppServices.self) private var services
+    var onShowToday: () -> Void = {}
     @State private var mode: Mode = .planner
     @State private var showAssistant = false
 
@@ -45,7 +46,7 @@ struct PlanView: View {
                 }
             }
             .sheet(isPresented: $showAssistant) {
-                AIAssistantView().environment(services)
+                AIAssistantView(onViewToday: onShowToday).environment(services)
             }
             .animation(.spring(response: 0.38, dampingFraction: 0.9), value: mode)
         }

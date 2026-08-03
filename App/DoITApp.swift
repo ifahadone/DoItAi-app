@@ -97,6 +97,9 @@ struct RootTabView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @State private var selection: Tab
+    /// The destination underneath Quick Add. Capture is an action, not a navigation destination, so
+    /// dismissing the sheet must return the user to the screen where they started.
+    @State private var lastDestination: Tab
     @State private var showQuickAdd = false
     @State private var showFocusDemo = false
     /// Set by onboarding's "Create your first task" so the shell opens Quick Add once on first appear.
@@ -113,31 +116,39 @@ struct RootTabView: View {
         default: tab = .today
         }
         _selection = State(initialValue: tab)
+        _lastDestination = State(initialValue: tab)
     }
 
     var body: some View {
-        TabView(selection: $selection) {
-            TodayView()
-                .tabItem { Label("Today", systemImage: "sun.max") }
-                .tag(Tab.today)
+        GeometryReader { proxy in
+            TabView(selection: $selection) {
+                TodayView()
+                    .tabItem { Label("Today", systemImage: "sun.max") }
+                    .tag(Tab.today)
 
-            PlanView()
-                .tabItem { Label("Plan", systemImage: "calendar") }
-                .tag(Tab.plan)
+                PlanView(onShowToday: { selection = .today })
+                    .tabItem { Label("Plan", systemImage: "calendar") }
+                    .tag(Tab.plan)
 
-            // Center Quick Add: AppSpec §4 describes a floating capture button. Phase 0 uses a tab
-            // slot as the entry point; a true FAB overlay is a Phase 1 polish item.
-            Color.clear
-                .tabItem { Label("Add", systemImage: "plus.circle.fill") }
-                .tag(Tab.add)
+                // Reserve the centre tab-bar position for capture. The visible, accessible control
+                // is the elevated button overlaid below; tapping the reserved slot is still handled
+                // as capture for a forgiving hit target.
+                Color.clear
+                    .tabItem { Text("") }
+                    .tag(Tab.add)
 
-            ListsView()
-                .tabItem { Label("Lists", systemImage: "tray.full") }
-                .tag(Tab.lists)
+                ListsView()
+                    .tabItem { Label("Lists", systemImage: "tray.full") }
+                    .tag(Tab.lists)
 
-            InsightsView()
-                .tabItem { Label("Insights", systemImage: "chart.bar") }
-                .tag(Tab.insights)
+                InsightsView()
+                    .tabItem { Label("Insights", systemImage: "chart.bar") }
+                    .tag(Tab.insights)
+            }
+            .overlay(alignment: .bottom) {
+                captureButton
+                    .padding(.bottom, proxy.safeAreaInsets.bottom + 4)
+            }
         }
         .task {
             // Rehydrate any unsynced outbox + pull cursor from a previous run BEFORE the first sync,
@@ -154,10 +165,6 @@ struct RootTabView: View {
                 pendingFirstQuickAdd = false
                 showQuickAdd = true
             }
-            // Ask for notification permission once the shell is up (reminders + alarm chains need it).
-            // The shell only appears after onboarding, so this is now a post-value ask, not cold-launch;
-            // it self-guards against headless demo launches so the prompt can't block them.
-            await services.requestNotificationAuthorizationIfNeeded()
             // Refresh the Pro entitlement from the server (the authority for feature gates, P6-4).
             await services.entitlements.refresh()
             // Open the realtime socket (P5-5): a collaborator's `sync.bump` triggers an immediate pull.
@@ -222,7 +229,9 @@ struct RootTabView: View {
         .onChange(of: selection) { _, newValue in
             if newValue == .add {
                 showQuickAdd = true
-                selection = .today // bounce back; the + is an action, not a destination
+                selection = lastDestination
+            } else {
+                lastDestination = newValue
             }
         }
         // Deep links (journey G15-S16): doit://today|plan|lists|insights, doit://quickadd, doit://task/<id>.
@@ -248,6 +257,25 @@ struct RootTabView: View {
         .sheet(isPresented: $showFocusDemo) {
             FocusTimerView().environment(services)
         }
+    }
+
+    /// The signature capture affordance. It rises above the system tab bar enough to read as an
+    /// action while retaining the familiar native destinations and safe-area behaviour.
+    private var captureButton: some View {
+        Button {
+            showQuickAdd = true
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 54, height: 54)
+                .background(Color.accentColor, in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.28), lineWidth: 1))
+                .shadow(color: Color.accentColor.opacity(0.3), radius: 12, y: 6)
+        }
+        .buttonStyle(DoITPressStyle())
+        .accessibilityLabel("Quick Add")
+        .accessibilityHint("Capture a task with text or voice")
     }
 
     /// Route a `doit://` deep link to the right surface (journey G15-S16). Unknown links no-op safely.
@@ -337,4 +365,3 @@ private struct PlaceholderView: View {
         }
     }
 }
-

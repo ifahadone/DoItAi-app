@@ -10,6 +10,7 @@ struct AIAssistantView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @Environment(AppServices.self) private var services
+    var onViewToday: () -> Void = {}
 
     /// Non-deleted tasks, for the deterministic weekly-review metrics (journey G12-S10).
     @Query(filter: #Predicate<TaskModel> { $0.deletedAt == nil && !$0.archived })
@@ -267,7 +268,10 @@ struct AIAssistantView: View {
                         .font(.headline)
                         .foregroundStyle(.green)
                         .symbolEffect(.bounce, value: applied)
-                    Button { dismiss() } label: {
+                    Button {
+                        dismiss()
+                        onViewToday()
+                    } label: {
                         Label("View on Today", systemImage: "calendar.day.timeline.left")
                             .frame(maxWidth: .infinity)
                     }
